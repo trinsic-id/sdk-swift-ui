@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'TrinsicUI'
-  s.version          = '0.0.1'
+  s.version          = '0.2.0'
   s.summary          = 'Trinsic UI library.'
   s.description      = <<-DESC
 We help you launch and capture the results of a Trinsic Acceptance session
