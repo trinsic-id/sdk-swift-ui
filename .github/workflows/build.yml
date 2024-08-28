@@ -1,4 +1,4 @@
-name: Swift
+name: Build Swift
 
 on:
   push:
@@ -14,3 +14,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build
         run: swift build -v
+      - name: Lint Podspec
+        run: pod spec lint TrinsicUI.podspec
