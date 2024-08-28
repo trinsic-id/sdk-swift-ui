@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Ensure all history and tags are fetched
       - name: Build
         run: swift build -v
       - name: Lint Podspec
