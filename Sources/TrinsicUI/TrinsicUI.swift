@@ -21,11 +21,11 @@ import AppKit
     
     @objc public func launchSession(launchUrl: String, callbackURL: String) async throws -> LaunchSessionResult {
         return try await withCheckedThrowingContinuation( { continuation in
-            let task = Task {
+            Task {
                 var completionHandler: ((URL?, Error?) -> Void)?
                 var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
                 do {
-                    let (formattedLaunchUrl, callbackURLScheme, callbackURLHost, callbackURLPath) = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl, callbackURL: callbackURL)
+                    let (formattedLaunchUrl, callbackURLScheme, _, _) = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl, callbackURL: callbackURL)
                     
                     completionHandler = { (url: URL?, err: Error?) in
                         completionHandler = nil
@@ -90,11 +90,11 @@ import AppKit
     
     private func parseUrl(url: URL) -> (result: LaunchSessionResult?, parseError: Error?) {
         // Parse launchUrl into a URLComponents object
-        guard var urlComponents = URLComponents(string: url.absoluteString) else {
+        guard let urlComponents = URLComponents(string: url.absoluteString) else {
             return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl))
         }
         
-        var queryItems = urlComponents.queryItems ?? []
+        let queryItems = urlComponents.queryItems ?? []
 
         guard let successString = queryItems.first(where: { $0.name == "success" })?.value,
             !successString.isEmpty,
@@ -130,7 +130,7 @@ import AppKit
         }
         #endif
         // Parse launchUrl into a URL object
-        guard let launchUrlParsed = URL(string: launchUrl) else {
+        guard URL(string: launchUrl) != nil else {
             throw TrinsicError.error(with: .unparsableLaunchUrl)
         }
           
