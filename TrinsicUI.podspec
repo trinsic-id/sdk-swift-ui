@@ -10,11 +10,10 @@ Pod::Spec.new do |s|
 We help you launch and capture the results of a Trinsic Acceptance session
                        DESC
   s.homepage         = 'https://trinsic.id'
-  s.license          = { :file => '../LICENSE' }
+  s.license          = { :type => 'MIT' }
   s.author           = { 'Trinsic' => 'hello@trinsic.id' }
-  s.source           = { :path => '.' }
+  s.source       = { :git => 'https://github.com/trinsic-id/sdk-swift-ui.git', :tag => 'v0.1.0' }
   s.source_files = 'Sources/**/*.{swift,h,m}'
-
 
   s.platform = :ios, '12.0'
     # Flutter.framework does not contain a i386 slice.
