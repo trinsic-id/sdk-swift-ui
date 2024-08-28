@@ -1,0 +1,18 @@
+name: Build Swift
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -v
+      - name: Lint Podspec
+        run: pod spec lint TrinsicUI.podspec
