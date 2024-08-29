@@ -14,6 +14,11 @@ We help you launch and capture the results of a Trinsic Acceptance session
   s.author           = { 'Trinsic' => 'hello@trinsic.id' }
   s.source       = { :git => 'https://github.com/trinsic-id/sdk-swift-ui.git', :tag => 'v0.3.7' }
   s.source_files = 'Sources/**/*.{swift,h,m}'
+  
+  s.requires_arc = true
+  s.xcconfig = { 
+    'SWIFT_OBJC_INTERFACE_HEADER_NAME' => 'TrinsicUI-Swift.h'
+  }
 
   s.platform = :ios, '12.0'
     # Flutter.framework does not contain a i386 slice.
