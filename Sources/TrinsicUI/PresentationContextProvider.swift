@@ -10,7 +10,7 @@ import AppKit
 import Foundation
 
 @available(iOS 13.0, macOS 14.4, *)
-public class TrinsicPresentationContextProvider : NSObject, ASWebAuthenticationPresentationContextProviding {
+internal class TrinsicPresentationContextProvider : NSObject, ASWebAuthenticationPresentationContextProviding {
     private weak var presentationAnchor: ASPresentationAnchor?
     private let semaphore = DispatchSemaphore(value: 0)
     
