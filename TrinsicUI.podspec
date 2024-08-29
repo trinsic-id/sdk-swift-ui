@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'TrinsicUI'
-  s.version          = '0.3.9'
+  s.version          = '0.3.10'
   s.summary          = 'Trinsic UI library.'
   s.description      = <<-DESC
 We help you launch and capture the results of a Trinsic Acceptance session
@@ -12,7 +12,7 @@ We help you launch and capture the results of a Trinsic Acceptance session
   s.homepage         = 'https://trinsic.id'
   s.license          = { :type => 'MIT' }
   s.author           = { 'Trinsic' => 'hello@trinsic.id' }
-  s.source       = { :git => 'https://github.com/trinsic-id/sdk-swift-ui.git', :tag => 'v0.3.9' }
+  s.source       = { :git => 'https://github.com/trinsic-id/sdk-swift-ui.git', :tag => 'v0.3.10' }
   s.source_files = 'Sources/**/*.{swift,h,m}'
   
   s.requires_arc = true
