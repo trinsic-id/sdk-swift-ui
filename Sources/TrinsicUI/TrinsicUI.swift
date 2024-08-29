@@ -12,6 +12,11 @@ import AppKit
 @available(iOS 13.0, macOS 14.4, *)
 @objc public class TrinsicUI : NSObject {
     private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding
+    
+    @objc public override init() {
+        self.presentationContextProvider = TrinsicPresentationContextProvider()
+        super.init()
+    }
     public init(presentationContextProvider: ASWebAuthenticationPresentationContextProviding? = nil){
         // Use a custom one if provided by library consumer, otherwise we will attempt to grab the correct presentation context.
         self.presentationContextProvider = presentationContextProvider ?? TrinsicPresentationContextProvider()

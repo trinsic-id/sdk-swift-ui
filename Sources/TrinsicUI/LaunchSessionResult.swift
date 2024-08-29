@@ -1,10 +1,10 @@
 import Foundation
 
 @objc public class LaunchSessionResult : NSObject {
-    public let sessionId: String?
-    public let resultsAccessKey: String?
-    public let success: Bool
-    public let canceled: Bool
+    @objc public let sessionId: String?
+    @objc public let resultsAccessKey: String?
+    @objc public let success: Bool
+    @objc public let canceled: Bool
     
     @objc init(success: Bool, canceled: Bool, sessionId: String?, resultsAccessKey: String?) {
             self.success = success
