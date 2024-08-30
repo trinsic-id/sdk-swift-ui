@@ -189,8 +189,4 @@ import AppKit
         
         return (formattedLaunchUrl: updatedUrl, callbackURLScheme: callbackScheme, callbackURLHost: callbackHost, callbackURLPath: callbackPath)
     }
-    
-    @objc public func sayHello() -> String {
-        return "Hello from MyFramework!";
-    }
 }
