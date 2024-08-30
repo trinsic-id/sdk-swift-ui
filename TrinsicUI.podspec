@@ -14,15 +14,20 @@ We help you launch and capture the results of a Trinsic Acceptance session
   s.author           = { 'Trinsic' => 'hello@trinsic.id' }
   s.source       = { :git => 'https://github.com/trinsic-id/sdk-swift-ui.git', :tag => 'v0.3.12' }
   s.source_files = 'Sources/**/*.{swift,h,m}'
-  
-  s.requires_arc = true
+  s.static_framework = true
+
+  s.platform = :ios, '12.0'
+
+    # Flutter.framework does not contain a i386 slice.
+    # & Swift/Objective-C compatibility
+  s.pod_target_xcconfig = { 
+    'DEFINES_MODULE' => 'YES', 
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386', 
+    'SWIFT_COMPILATION_MODE' => 'wholemodule' 
+  }
   s.xcconfig = { 
     'SWIFT_OBJC_INTERFACE_HEADER_NAME' => 'TrinsicUI-Swift.h'
   }
-
-  s.platform = :ios, '12.0'
-    # Flutter.framework does not contain a i386 slice.
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
 
   # If your plugin requires a privacy manifest, for example if it uses any
