@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 We help you launch and capture the results of a Trinsic Acceptance session
                        DESC
-  s.homepage         = 'https://github.com/trinsic-id/sdk-swift-ui.git'
+  s.homepage         = 'https://github.com/trinsic-id/sdk-swift-ui'
   s.license          = { :type => 'MIT' }
   s.author           = { 'Trinsic' => 'hello@trinsic.id' }
   s.source       = { :git => 'https://github.com/trinsic-id/sdk-swift-ui.git', :tag => 'v0.4.2' }
