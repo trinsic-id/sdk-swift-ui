@@ -107,6 +107,9 @@ import AppKit
             return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find success in result url"))
         }
         
+        let canceledString = queryItems.first(where: { $0.name == "canceled" })?.value
+        let canceled = (canceledString != nil && !canceledString!.isEmpty && Bool(canceledString!) == true)
+        
         guard let sessionId = queryItems.first(where: { $0.name == "sessionId" })?.value,
             !sessionId.isEmpty else {
             return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find sessionId in result url"))
@@ -116,7 +119,7 @@ import AppKit
             !resultsAccessKey.isEmpty else {
             return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "cannot find resultsAccessKey in result url"))
         }
-        let result = LaunchSessionResult.init(success: success, canceled: false, sessionId: sessionId, resultsAccessKey: resultsAccessKey)
+        let result = LaunchSessionResult.init(success: success, canceled: canceled, sessionId: sessionId, resultsAccessKey: resultsAccessKey)
         return (result: result, parseError: nil)
     }
     
