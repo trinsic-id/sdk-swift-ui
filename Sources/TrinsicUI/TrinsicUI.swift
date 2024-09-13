@@ -55,7 +55,7 @@ import AppKit
                             }
                         }
                         guard let url = url else {
-                            continuation.resume(throwing: TrinsicError.error(with: .unknownError))
+                            continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "We did not receive a url from the native completion handler"))
                             return
                         }
                         let (result, parseError) = self.parseUrl(url: url)
@@ -66,7 +66,7 @@ import AppKit
                             continuation.resume(returning: result)
                         }
                         else {
-                            continuation.resume(throwing: TrinsicError.error(with: .unknownError))
+                            continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "An unknown error occured, we should never hit this code-branch"))
                         }
                     }
                     
@@ -74,7 +74,7 @@ import AppKit
                     if #available(iOS 17.4, *) {
                         if (callbackURLScheme == "https") {
                             //When appropriate we should investigate/dive deeper.
-                            throw TrinsicError.error(with: .unsupportedHttpsLinking)
+                            throw TrinsicError.error(with: .unsupportedHttpsLinking, message: "We don't support https deep linking yet. Please contact Trinsic support.")
                         } else {
                             _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callback: ASWebAuthenticationSession.Callback.customScheme(callbackURLScheme), completionHandler: completionHandler!)
                         }
@@ -96,7 +96,7 @@ import AppKit
     private func parseUrl(url: URL) -> (result: LaunchSessionResult?, parseError: Error?) {
         // Parse launchUrl into a URLComponents object
         guard let urlComponents = URLComponents(string: url.absoluteString) else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl))
+            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot make URLComponents from result url"))
         }
         
         let queryItems = urlComponents.queryItems ?? []
@@ -104,17 +104,17 @@ import AppKit
         guard let successString = queryItems.first(where: { $0.name == "success" })?.value,
             !successString.isEmpty,
             let success = Bool(successString) else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl))
+            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find success in result url"))
         }
         
         guard let sessionId = queryItems.first(where: { $0.name == "sessionId" })?.value,
             !sessionId.isEmpty else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl))
+            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find sessionId in result url"))
         }
         
         guard let resultsAccessKey = queryItems.first(where: { $0.name == "resultsAccessKey" })?.value,
             !resultsAccessKey.isEmpty else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl))
+            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "cannot find resultsAccessKey in result url"))
         }
         let result = LaunchSessionResult.init(success: success, canceled: false, sessionId: sessionId, resultsAccessKey: resultsAccessKey)
         return (result: result, parseError: nil)
@@ -122,33 +122,33 @@ import AppKit
     
     private func validateAndFormatLaunchUrl(launchUrl: String, callbackURL: String) throws -> (formattedLaunchUrl: URL, callbackURLScheme: String, callbackURLHost: String?, callbackURLPath: String?) {
         guard !launchUrl.isEmpty else {
-            throw TrinsicError.error(with: .emptyLaunchUrl)
+            throw TrinsicError.error(with: .emptyLaunchUrl, message: "launchURL is empty")
         }
         guard !callbackURL.isEmpty else {
-            throw TrinsicError.error(with: .emptyRedirectUrl)
+            throw TrinsicError.error(with: .emptyCallbacklUrl, message: "callbackURL")
         }
         
         //UIKit is only available on iOS
         #if canImport(UIKit)
         guard UIApplication.shared.canOpenURL(URL(string: callbackURL)!) else {
-            throw TrinsicError.error(with: .noRegisteredApplicationForLaunchUrl)
+            throw TrinsicError.error(with: .noRegisteredApplicationForLaunchUrl, message: "No registered application for the callbackUrl")
         }
         #endif
         // Parse launchUrl into a URL object
         guard URL(string: launchUrl) != nil else {
-            throw TrinsicError.error(with: .unparsableLaunchUrl)
+            throw TrinsicError.error(with: .unparsableLaunchUrl, message: "Cannot make URL from launchUrl")
         }
           
         // Parse launchUrl into a URLComponents object
         guard var urlComponents = URLComponents(string: launchUrl) else {
-            throw TrinsicError.error(with: .unparsableLaunchUrl)
+            throw TrinsicError.error(with: .unparsableLaunchUrl, message: "Cannot make URLComponents from launchUrl")
         }
           
         var queryItems = urlComponents.queryItems ?? []
 
         guard let sessionId = queryItems.first(where: { $0.name == "sessionId" })?.value,
             !sessionId.isEmpty else {
-            throw TrinsicError.error(with: .missingSessionId)
+            throw TrinsicError.error(with: .missingSessionId, message: "Can't find session id on launchUrl")
         }
 
         // Launchmode affects some validation checks on our backend to ensure a session for a platform has all the required parameters
@@ -166,19 +166,19 @@ import AppKit
 
         // Reconstruct the updated URL which includes the launch mode and redirect url.
         guard let updatedUrl = urlComponents.url else {
-            throw TrinsicError.error(with: .cannotReconstructLaunchUrl)
+            throw TrinsicError.error(with: .cannotReconstructLaunchUrl, message: "Cannot get url from reconstructed launchUrl")
         }
         
         
         guard let callbackURLParsed = URL(string: callbackURL) else {
-            throw TrinsicError.error(with: .unparsableCallbackUrl)
+            throw TrinsicError.error(with: .unparsableCallbackUrl, message: "Cannot create URL from callback url")
         }
         
         guard let callbackScheme = callbackURLParsed.scheme else {
-            throw TrinsicError.error(with: .cannotReconstructLaunchUrl)
+            throw TrinsicError.error(with: .unparsableCallbackUrl, message: "Cannot get scheme from callback url")
         }
         guard let callbackHost = callbackURLParsed.host else {
-            throw TrinsicError.error(with: .cannotReconstructLaunchUrl)
+            throw TrinsicError.error(with: .unparsableCallbackUrl, message: "Cannot get host from callback url")
         }
         var callbackPath = ""
         if #available(iOS 16.0, *) {

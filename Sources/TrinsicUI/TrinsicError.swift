@@ -10,7 +10,7 @@ import Foundation
     case missingSessionId = 6
     case noSupportForiOSBelow12 = 7;
     case emptyLaunchUrl = 8;
-    case emptyRedirectUrl = 9
+    case emptyCallbacklUrl = 9
     case cannotReconstructLaunchUrl = 10
     case unparsableCallbackUrl = 11
     case unsupportedHttpsLinking = 12
@@ -46,8 +46,8 @@ import Foundation
             return "This feature is not supported on iOS below version 12."
         case .emptyLaunchUrl:
             return "The launch URL is empty."
-        case .emptyRedirectUrl:
-            return "The redirect URL is empty."
+        case .emptyCallbacklUrl:
+            return "The callback URL is empty."
         case .cannotReconstructLaunchUrl:
             return "Cannot reconstruct the launch URL."
         case .unparsableCallbackUrl:
