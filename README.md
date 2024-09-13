@@ -2,7 +2,9 @@
 
 [![Swift UI Version](https://img.shields.io/cocoapods/v/TrinsicUI.svg)](<[https://www.npmjs.org/package/@trinsic/react-native-ui](https://cocoapods.org/pods/TrinsicUI)>) [![Swift Build Status](https://github.com/trinsic-id/sdk/actions/workflows/ui-swift-release.yml/badge.svg)](https://github.com/trinsic-id/sdk/actions?query=branch%main)
 
-The Trinsic Swift UI Library provides ways to launch verification sessions directly in your Swift and Objective-C projects, requiring very little code.
+The Trinsic Swift UI Library provides ways to launch verification sessions directly in your Swift and Objective-C projects.
+
+This library must be paired with a [api library](https://github.com/trinsic-id/sdk#api-libraries) as part of a full integration.
 
 You can find a full example using this library in the [samples](https://github.com/trinsic-id/sdk/tree/main/ui-swift/samples) folder.
 
@@ -49,7 +51,7 @@ import TrinsicUI
 ```
 
 Create an instance of TrinsicUI and launch a session.
-You can retrieve the launch url from a trusted backend that can reach out to the Trinsic servers. [See our backend language examples](https://github.com/trinsic-id/sdk/tree/main/api-typescript/samples).
+You can retrieve the launch url from a trusted backend that can reach out to the Trinsic servers. [See our API libraries.](https://github.com/trinsic-id/sdk#api-libraries)
 
 ```swift
 let trinsicUI = TrinsicUI()
