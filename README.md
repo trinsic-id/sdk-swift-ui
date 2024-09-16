@@ -4,7 +4,7 @@
 
 The Trinsic Swift UI Library provides ways to launch verification sessions directly in your Swift and Objective-C projects.
 
-This library must be paired with a [api library](https://github.com/trinsic-id/sdk#api-libraries) as part of a full integration.
+This library must be paired with an [api library](https://github.com/trinsic-id/sdk#api-libraries) as part of a full integration.
 
 You can find a full example using this library in the [samples](https://github.com/trinsic-id/sdk/tree/main/ui-swift/samples) folder.
 
