@@ -24,13 +24,13 @@ import AppKit
     }
     
     
-    @objc public func launchSession(launchUrl: String, callbackURL: String) async throws -> LaunchSessionResult {
+    @objc public func launchSession(launchUrl: String, callbackUrlScheme: String) async throws -> LaunchSessionResult {
         return try await withCheckedThrowingContinuation( { continuation in
             Task {
                 var completionHandler: ((URL?, Error?) -> Void)?
                 var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
                 do {
-                    let (formattedLaunchUrl, callbackURLScheme, _, _) = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl, callbackURL: callbackURL)
+                    let formattedLaunchUrl = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl)
                     
                     completionHandler = { (url: URL?, err: Error?) in
                         completionHandler = nil
@@ -72,14 +72,14 @@ import AppKit
                     
                     var _session: ASWebAuthenticationSession? = nil
                     if #available(iOS 17.4, *) {
-                        if (callbackURLScheme == "https") {
+                        if (callbackUrlScheme == "https") {
                             //When appropriate we should investigate/dive deeper.
                             throw TrinsicError.error(with: .unsupportedHttpsLinking, message: "We don't support https deep linking yet. Please contact Trinsic support.")
                         } else {
-                            _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callback: ASWebAuthenticationSession.Callback.customScheme(callbackURLScheme), completionHandler: completionHandler!)
+                            _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callback: ASWebAuthenticationSession.Callback.customScheme(callbackUrlScheme), completionHandler: completionHandler!)
                         }
                     } else {
-                        _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callbackURLScheme: formattedLaunchUrl.scheme, completionHandler: completionHandler!)
+                        _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callbackURLScheme: callbackUrlScheme, completionHandler: completionHandler!)
                     }
                     let session = _session!
                     sessionToKeepAlive = session
@@ -123,7 +123,7 @@ import AppKit
         return (result: result, parseError: nil)
     }
     
-    private func validateAndFormatLaunchUrl(launchUrl: String, callbackURL: String) throws -> (formattedLaunchUrl: URL, callbackURLScheme: String, callbackURLHost: String?, callbackURLPath: String?) {
+    private func validateAndFormatLaunchUrl(launchUrl: String) throws -> URL {
         guard !launchUrl.isEmpty else {
             throw TrinsicError.error(with: .emptyLaunchUrl, message: "launchURL is empty")
         }
@@ -158,11 +158,7 @@ import AppKit
         if queryItems.first(where: { $0.name == "launchMode" }) == nil {
           queryItems.append(URLQueryItem(name: "launchMode", value: "mobile"))
         }
-        
-        // Check if redirectUrl exists, if not, add it based on the redirectScheme parameter
-        if queryItems.first(where: { $0.name == "redirectUrl" }) == nil {
-          queryItems.append(URLQueryItem(name: "redirectUrl", value: callbackURL))
-        }
+    
 
         // Update the URL components with the new query items
         urlComponents.queryItems = queryItems
@@ -172,24 +168,6 @@ import AppKit
             throw TrinsicError.error(with: .cannotReconstructLaunchUrl, message: "Cannot get url from reconstructed launchUrl")
         }
         
-        
-        guard let callbackURLParsed = URL(string: callbackURL) else {
-            throw TrinsicError.error(with: .unparsableCallbackUrl, message: "Cannot create URL from callback url")
-        }
-        
-        guard let callbackScheme = callbackURLParsed.scheme else {
-            throw TrinsicError.error(with: .unparsableCallbackUrl, message: "Cannot get scheme from callback url")
-        }
-        guard let callbackHost = callbackURLParsed.host else {
-            throw TrinsicError.error(with: .unparsableCallbackUrl, message: "Cannot get host from callback url")
-        }
-        var callbackPath = ""
-        if #available(iOS 16.0, *) {
-            callbackPath = callbackURLParsed.path(percentEncoded: true)
-        } else {
-            callbackPath = callbackURLParsed.path
-        }
-        
-        return (formattedLaunchUrl: updatedUrl, callbackURLScheme: callbackScheme, callbackURLHost: callbackHost, callbackURLPath: callbackPath)
+        return updatedUrl
     }
 }
