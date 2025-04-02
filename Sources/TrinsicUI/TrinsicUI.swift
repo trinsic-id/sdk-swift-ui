@@ -127,16 +127,7 @@ import AppKit
         guard !launchUrl.isEmpty else {
             throw TrinsicError.error(with: .emptyLaunchUrl, message: "launchURL is empty")
         }
-        guard !callbackURL.isEmpty else {
-            throw TrinsicError.error(with: .emptyCallbacklUrl, message: "callbackURL")
-        }
         
-        //UIKit is only available on iOS
-        #if canImport(UIKit)
-        guard UIApplication.shared.canOpenURL(URL(string: callbackURL)!) else {
-            throw TrinsicError.error(with: .noRegisteredApplicationForLaunchUrl, message: "No registered application for the callbackUrl")
-        }
-        #endif
         // Parse launchUrl into a URL object
         guard URL(string: launchUrl) != nil else {
             throw TrinsicError.error(with: .unparsableLaunchUrl, message: "Cannot make URL from launchUrl")
