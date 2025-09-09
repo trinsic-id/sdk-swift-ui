@@ -7,6 +7,9 @@
 
 import PassKit
 
+/**
+ Class which performs mDL Exchanges. Call this after creating an exchange via Trinsic's CreateMDLExchange API
+ */
 @available(iOS 17.0, *)
 @available(macOS, unavailable, message: "Not supported on macOS.")
 @available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
@@ -19,8 +22,12 @@ public class TrinsicMdl {
         self.controller = controller ?? PKIdentityAuthorizationController()
     }
     
-    public func performMdlExchange(requestObjectBase64: String) async throws -> MdlExchangeResult {
-        let exchangeRequest = try decodeBase64String(requestObjectBase64)
+    
+    /// Perform an mDL Exchange
+    /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
+    /// - Returns: An exchange result containing an exchangeId and token
+    public func performMdlExchange(requestObjectBase64Url: String) async throws -> MdlExchangeResult {
+        let exchangeRequest = try decodeBase64UrlString(requestObjectBase64Url)
         let descriptor = try exchangeRequest.toDriversLicenseDescriptor()
         let request = PKIdentityRequest()
         request.descriptor = descriptor
@@ -41,8 +48,11 @@ public class TrinsicMdl {
     }
     
     
-    public func canRequestDriversLicense(_ requestObjectBase64: String) async throws -> Bool {
-        let exchangeRequest = try decodeBase64String(requestObjectBase64)
+    /// Checks if a credential exists in the user's wallet which can fulfill a Trinsic mDL Exchange.
+    /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
+    /// - Returns: True if the user has an eligible credential; false if not
+    public func canRequestDriversLicense(_ requestObjectBase64Url: String) async throws -> Bool {
+        let exchangeRequest = try decodeBase64String(requestObjectBase64Url)
         let descriptor = try exchangeRequest.toDriversLicenseDescriptor()
         return await withCheckedContinuation { continuation in
             controller.checkCanRequestDocument(descriptor) { canRequest in
@@ -51,7 +61,12 @@ public class TrinsicMdl {
         }
     }
     
-    private func decodeBase64String(_ requestBase64: String) throws -> ExchangeRequest {
+    private func decodeBase64UrlString(_ requestBase64Url: String) throws -> ExchangeRequest {
+        let requestBase64 = requestBase64Url
+            .replacing("_", with: "/")
+            .replacing("/", with: "_")
+            .replacing("=", with: "")
+        
         if let data = Data(base64Encoded: requestBase64) {
             do {
                 let decoded = try JSONDecoder().decode(ExchangeRequest.self, from: data)
