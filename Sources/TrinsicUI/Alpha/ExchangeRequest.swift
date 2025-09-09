@@ -22,13 +22,14 @@ public struct ExchangeRequest: Codable {
     public var requestObject: ExchangeRequestBody
     
     public func toDriversLicenseDescriptor() throws -> PKIdentityDriversLicenseDescriptor {
-        return try ExchangeRequestTransformer.toPKIdentityDriversLicenseDescriptor(from: self)
+        return try ExchangeRequestTransformer
+            .toPKIdentityDriversLicenseDescriptor(from: self)
     }
 }
 
 public struct ExchangeRequestBody: Codable {
     public var appleDocumentType: String
-    public var requestObject: [ExchangeRequestAttribute]
+    public var requestAttributes: [ExchangeRequestAttribute]
     public var nonce: String
     public var merchantId: String
     public var teamId: String
@@ -60,6 +61,7 @@ public enum ExchangeRequestTransformerError: Error {
 }
 
 @available(iOS 16.0, *)
+@available(macOS, unavailable)
 public class ExchangeRequestTransformer {
     
     /// Transforms an ExchangeRequest into a PKIdentityDriversLicenseDescriptor
@@ -70,50 +72,112 @@ public class ExchangeRequestTransformer {
         
         // This should only be used for mDLs
         guard exchangeRequest.type == "mdlRequest" else {
-            throw ExchangeRequestTransformerError.unsupportedExchangeType(exchangeRequest.type)
+            throw ExchangeRequestTransformerError
+                .unsupportedExchangeType(exchangeRequest.type)
         }
         
         let descriptor = PKIdentityDriversLicenseDescriptor()
         
-        let body = exchangeRequest.requestObject
-        for attribute in body.requestObject {
+        let requestAttributes = exchangeRequest.requestObject.requestAttributes
+        for attribute in requestAttributes {
             switch attribute.attributeType {
-            case "given_name":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.givenName], intentToStore: intent)
-            case "family_name":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.familyName], intentToStore: intent)
-            case "birth_date":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.dateOfBirth], intentToStore: intent)
-            case "issue_date":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.documentIssueDate], intentToStore: intent)
-            case "expiry_date":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.documentExpirationDate], intentToStore: intent)
-            case "document_number":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.documentNumber], intentToStore: intent)
-            case "portrait":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.portrait], intentToStore: intent)
-            case "driving_privileges":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.drivingPrivileges], intentToStore: intent)
-            case "issuing_authority":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                descriptor.addElements([.issuingAuthority], intentToStore: intent)
-            case "age_over_18":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
+            case "GivenName":
+               
+                descriptor
+                    .addElements(
+                        [.givenName],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "FamilyName":
+               
+                descriptor
+                    .addElements(
+                        [.familyName],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "DateOfBirth":
+               
+                descriptor
+                    .addElements(
+                        [.dateOfBirth],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "Address":
+               
+                descriptor
+                    .addElements(
+                        [.address],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "IssuingAuthority":
+               
+                descriptor
+                    .addElements(
+                        [.issuingAuthority],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "DocumentIssueDate":
+               
+                descriptor
+                    .addElements(
+                        [.documentIssueDate],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "DocumentExpirationDate":
+               
+                descriptor
+                    .addElements(
+                        [.documentExpirationDate],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "DocumentNumber":
+               
+                descriptor
+                    .addElements(
+                        [.documentNumber],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "Portrait":
+               
+                descriptor
+                    .addElements(
+                        [.portrait],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "DrivingPrivileges":
+               
+                descriptor
+                    .addElements(
+                        [.drivingPrivileges],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "Age":
+               
+                descriptor
+                    .addElements(
+                        [.age],
+                        intentToStore: PKIdentityIntentToStore
+                            .intent(attribute.intentToStore)
+                    )
+            case "AgeAtLeastX":
+               
                 if let ageOverArgument = attribute.ageOverArgument {
-                    descriptor.addElements([.age(atLeast: ageOverArgument)], intentToStore: intent)
-                }
-            case "age_over_21":
-                let intent: PKIdentityIntentToStore = attribute.intentToStore > 0 ? .mayStore(days: attribute.intentToStore) : attribute.intentToStore < 0 ? .mayStore : .willNotStore
-                if let ageOverArgument = attribute.ageOverArgument {
-                    descriptor.addElements([.age(atLeast: ageOverArgument)], intentToStore: intent)
+                    descriptor
+                        .addElements(
+                            [.age(atLeast: ageOverArgument)],
+                            intentToStore: PKIdentityIntentToStore
+                                .intent(attribute.intentToStore)
+                        )
                 }
             default:
                 // For unknown attribute types, we'll continue without adding them
@@ -123,5 +187,15 @@ public class ExchangeRequestTransformer {
         }
         
         return descriptor
+    }
+}
+
+@available(iOS 16.0, *)
+public extension PKIdentityIntentToStore {
+    static func intent(_ intentToStore: Int) -> PKIdentityIntentToStore {
+        return intentToStore > 0 ? 
+            .mayStore(
+                days: intentToStore
+            ) : intentToStore < 0 ? .mayStore : .willNotStore
     }
 }
