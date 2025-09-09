@@ -86,88 +86,88 @@ public class ExchangeRequestTransformer {
                 descriptor
                     .addElements(
                         [.givenName],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "FamilyName":
                
                 descriptor
                     .addElements(
                         [.familyName],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "DateOfBirth":
                
                 descriptor
                     .addElements(
                         [.dateOfBirth],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "Address":
                
                 descriptor
                     .addElements(
                         [.address],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "IssuingAuthority":
                
                 descriptor
                     .addElements(
                         [.issuingAuthority],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "DocumentIssueDate":
                
                 descriptor
                     .addElements(
                         [.documentIssueDate],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "DocumentExpirationDate":
                
                 descriptor
                     .addElements(
                         [.documentExpirationDate],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "DocumentNumber":
                
                 descriptor
                     .addElements(
                         [.documentNumber],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "Portrait":
                
                 descriptor
                     .addElements(
                         [.portrait],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "DrivingPrivileges":
                
                 descriptor
                     .addElements(
                         [.drivingPrivileges],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "Age":
                
                 descriptor
                     .addElements(
                         [.age],
-                        intentToStore: PKIdentityIntentToStore
-                            .intent(attribute.intentToStore)
+                        intentToStore:
+                                .intent(attribute.intentToStore)
                     )
             case "AgeAtLeastX":
                
@@ -175,8 +175,8 @@ public class ExchangeRequestTransformer {
                     descriptor
                         .addElements(
                             [.age(atLeast: ageOverArgument)],
-                            intentToStore: PKIdentityIntentToStore
-                                .intent(attribute.intentToStore)
+                            intentToStore:
+                                    .intent(attribute.intentToStore)
                         )
                 }
             default:
