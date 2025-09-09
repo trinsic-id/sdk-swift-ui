@@ -52,7 +52,7 @@ public class TrinsicMdl {
     /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
     /// - Returns: True if the user has an eligible credential; false if not
     public func canRequestDriversLicense(_ requestObjectBase64Url: String) async throws -> Bool {
-        let exchangeRequest = try decodeBase64String(requestObjectBase64Url)
+        let exchangeRequest = try decodeBase64UrlString(requestObjectBase64Url)
         let descriptor = try exchangeRequest.toDriversLicenseDescriptor()
         return await withCheckedContinuation { continuation in
             controller.checkCanRequestDocument(descriptor) { canRequest in

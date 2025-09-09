@@ -84,6 +84,11 @@ public class ExchangeRequestTransformer {
                 .unsupportedExchangeType(exchangeRequest.type)
         }
         
+        guard exchangeRequest.exchangeMechanism == "NativeApp" else {
+            throw ExchangeRequestTransformerError
+                .unsupportedExchangeType(exchangeRequest.exchangeMechanism)
+        }
+        
         let descriptor = PKIdentityDriversLicenseDescriptor()
         
         let requestAttributes = exchangeRequest.requestObject.requestAttributes
