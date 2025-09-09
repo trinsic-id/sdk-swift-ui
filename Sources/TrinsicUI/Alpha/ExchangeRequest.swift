@@ -7,8 +7,13 @@
 
 import PassKit
 
+
+/// The result of an mDL Exchange
 public struct MdlExchangeResult {
+    /// The ID of the Trinsic mDL Exchange which this result is for
     public let exchangeId: String
+    
+    /// The token string which should be sent to Trinsic's FinalizeMDLExchange API exactly as-is
     public let token: String
 }
 
