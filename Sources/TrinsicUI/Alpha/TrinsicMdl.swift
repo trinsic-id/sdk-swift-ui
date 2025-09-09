@@ -8,8 +8,11 @@
 import PassKit
 
 @available(iOS 17.0, *)
+@available(macOS, unavailable, message: "Not supported on macOS.")
+@available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 @MainActor
 public class TrinsicMdl {
+    
     private let controller: PKIdentityAuthorizationController
 
     public init(controller: PKIdentityAuthorizationController? = nil) {

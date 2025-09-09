@@ -14,6 +14,8 @@ public struct MdlExchangeResult {
 
 
 @available(iOS 16.0, *)
+@available(macOS, unavailable, message: "Not supported on macOS.")
+@available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 public struct ExchangeRequest: Codable {
     public var exchangeId: String
     public var type: String
@@ -61,7 +63,8 @@ public enum ExchangeRequestTransformerError: Error {
 }
 
 @available(iOS 16.0, *)
-@available(macOS, unavailable)
+@available(macOS, unavailable, message: "Not supported on macOS.")
+@available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 public class ExchangeRequestTransformer {
     
     /// Transforms an ExchangeRequest into a PKIdentityDriversLicenseDescriptor
@@ -191,6 +194,8 @@ public class ExchangeRequestTransformer {
 }
 
 @available(iOS 16.0, *)
+@available(macOS, unavailable, message: "Not supported on macOS.")
+@available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 public extension PKIdentityIntentToStore {
     static func intent(_ intentToStore: Int) -> PKIdentityIntentToStore {
         return intentToStore > 0 ? 
