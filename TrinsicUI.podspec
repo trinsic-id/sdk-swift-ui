@@ -16,7 +16,7 @@ We help you launch and capture the results of a Trinsic Acceptance session
   s.source_files     = 'Sources/**/*.{swift,h,m}'
   s.static_framework = true
 
-  s.platform         = :ios, '13.4'
+  s.platform         = :ios, '17.0'
 
     # Flutter.framework does not contain a i386 slice.
     # & Swift/Objective-C compatibility
