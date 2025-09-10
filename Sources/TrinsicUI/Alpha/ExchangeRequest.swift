@@ -26,6 +26,14 @@ public struct ExchangeRequest: Codable {
     public var type: String
     public var platform: String
     public var exchangeMechanism: String
+    public var requestObject: String
+}
+
+public struct ParsedExchangeRequest {
+    public var exchangeId: String
+    public var type: String
+    public var platform: String
+    public var exchangeMechanism: String
     public var requestObject: ExchangeRequestBody
     
     public func toDriversLicenseDescriptor() throws -> PKIdentityDriversLicenseDescriptor {
@@ -36,7 +44,7 @@ public struct ExchangeRequest: Codable {
 
 public struct ExchangeRequestBody: Codable {
     public var appleDocumentType: String
-    public var requestAttributes: [ExchangeRequestAttribute]
+    public var requestedAttributes: [ExchangeRequestAttribute]
     public var nonce: String
     public var merchantId: String
     public var teamId: String
@@ -76,7 +84,7 @@ public class ExchangeRequestTransformer {
     /// - Parameter exchangeRequest: The exchange request to transform
     /// - Returns: A configured PKIdentityDriversLicenseDescriptor
     /// - Throws: ExchangeRequestTransformerError if the request cannot be transformed
-    public static func toPKIdentityDriversLicenseDescriptor(from exchangeRequest: ExchangeRequest) throws -> PKIdentityDriversLicenseDescriptor {
+    public static func toPKIdentityDriversLicenseDescriptor(from exchangeRequest: ParsedExchangeRequest) throws -> PKIdentityDriversLicenseDescriptor {
         
         // This should only be used for mDLs
         guard exchangeRequest.type == "mdlRequest" else {
@@ -91,7 +99,7 @@ public class ExchangeRequestTransformer {
         
         let descriptor = PKIdentityDriversLicenseDescriptor()
         
-        let requestAttributes = exchangeRequest.requestObject.requestAttributes
+        let requestAttributes = exchangeRequest.requestObject.requestedAttributes
         for attribute in requestAttributes {
             switch attribute.attributeType {
             case "GivenName":
