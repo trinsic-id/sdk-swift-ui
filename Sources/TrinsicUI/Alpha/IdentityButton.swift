@@ -6,9 +6,9 @@
 //
 import SwiftUI
 import PassKit
-#if canImport(UIKit)
+
+#if canImport(UIKit) && os(iOS)
 import UIKit
-#endif
 
 /// A convenient SwiftUI wrapper around Apple's `PKIdentityButton` that is suggested to use
 /// when verifying identity with Apple.
@@ -16,13 +16,12 @@ import UIKit
 /// For more information on what styles are available for the label and style, see https://developer.apple.com/documentation/passkit/pkidentitybutton
 ///
 @available(iOS 16.0, *)
-@available(macOS, unavailable)
 public struct IdentityButton: UIViewRepresentable {
   let label: PKIdentityButton.Label
   let style: PKIdentityButton.Style
   let action: () -> Void
 
-  init(
+  public init(
     label: PKIdentityButton.Label = .verifyIdentity,
     style: PKIdentityButton.Style = .black,
     action: @escaping () -> Void
@@ -62,3 +61,4 @@ public struct IdentityButton: UIViewRepresentable {
     }
   }
 }
+#endif
