@@ -75,11 +75,20 @@ public class TrinsicMdl {
         let descriptor = try exchangeRequest.toDriversLicenseDescriptor()
         
         // Perform query
-        return await withCheckedContinuation { continuation in
-            controller.checkCanRequestDocument(descriptor) { canRequest in
-                continuation.resume(returning: canRequest)
-            }
-        }
+        return await controller.canRequestDocument(descriptor)
+    }
+    
+    /// Checks if a credential exists in the user's wallet which can fulfill a Trinsic mDL Exchange.
+    /// - Returns: True if the user has an eligible credential; false if not
+    @available(macOS 13.0, *)
+    public func userHasDriversLicense()
+        async throws -> Bool
+    {
+        // Create a generic PassKit request for a drivers license
+        let descriptor = PKIdentityDriversLicenseDescriptor()
+        
+        // Perform query
+        return await controller.canRequestDocument(descriptor)
     }
 
     private func parseExchangeRequest(_ jsonExchangeRequest: Data) throws
