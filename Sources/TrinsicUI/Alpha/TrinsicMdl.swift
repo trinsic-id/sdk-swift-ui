@@ -22,6 +22,7 @@ public class TrinsicMdl {
     /// Perform an mDL Exchange
     /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
     /// - Returns: An exchange result containing an exchangeId and token
+    @available(macOS 13.0, *)
     public func performMdlExchange(_ requestObjectBase64Url: String)
         async throws -> MdlExchangeResult
     {
@@ -60,6 +61,7 @@ public class TrinsicMdl {
     /// Checks if a credential exists in the user's wallet which can fulfill a Trinsic mDL Exchange.
     /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
     /// - Returns: True if the user has an eligible credential; false if not
+    @available(macOS 13.0, *)
     public func canRequestDriversLicense(_ requestObjectBase64Url: String)
         async throws -> Bool
     {
@@ -105,6 +107,7 @@ public class TrinsicMdl {
         )
     }
 
+    @available(macOS 13.0, *)
     private func decodeBase64UrlString(_ base64Url: String) throws -> Data {
         // Convert base64url to base64
         var base64 =

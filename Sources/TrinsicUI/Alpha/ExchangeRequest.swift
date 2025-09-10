@@ -29,6 +29,8 @@ public struct ExchangeRequest: Codable {
     public var requestObject: String
 }
 
+@available(macOS, unavailable, message: "Not supported on macOS.")
+@available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 public struct ParsedExchangeRequest {
     public var exchangeId: String
     public var type: String
