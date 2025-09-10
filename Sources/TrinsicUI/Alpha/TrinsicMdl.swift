@@ -15,7 +15,6 @@ import PassKit
 @available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 @MainActor
 public class TrinsicMdl {
-    
     private let controller: PKIdentityAuthorizationController
 
     public init(controller: PKIdentityAuthorizationController? = nil) {
@@ -62,10 +61,14 @@ public class TrinsicMdl {
     }
     
     private func decodeBase64UrlString(_ requestBase64Url: String) throws -> ExchangeRequest {
-        let requestBase64 = requestBase64Url
+        var requestBase64 = requestBase64Url
             .replacing("_", with: "/")
             .replacing("/", with: "_")
-            .replacing("=", with: "")
+        
+        let paddingLength = 4 - (requestBase64.count % 4)
+        if paddingLength < 4 {
+            requestBase64.append(String(repeating: "=", count: paddingLength))
+        }
         
         if let data = Data(base64Encoded: requestBase64) {
             do {
