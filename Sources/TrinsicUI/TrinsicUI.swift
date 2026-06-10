@@ -12,7 +12,8 @@ import AppKit
 @available(iOS 13.0, macOS 14.4, *)
 @objc public class TrinsicUI : NSObject {
     private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding
-    
+    private var cancelHandler: (() -> Void)?
+
     @objc public override init() {
         self.presentationContextProvider = TrinsicPresentationContextProvider()
         super.init()
@@ -22,19 +23,25 @@ import AppKit
         self.presentationContextProvider = presentationContextProvider ?? TrinsicPresentationContextProvider()
         super.init()
     }
-    
-    
+
+
     @objc public func launchSession(launchUrl: String, callbackUrlScheme: String) async throws -> LaunchSessionResult {
         return try await withCheckedThrowingContinuation( { continuation in
             Task {
+                // One-shot guard so cancel() and the native completion handler can race without double-resuming the continuation.
+                let resumer = ResumeOnce()
                 var completionHandler: ((URL?, Error?) -> Void)?
                 var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
                 do {
                     let formattedLaunchUrl = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl)
-                    
-                    completionHandler = { (url: URL?, err: Error?) in
+
+                    completionHandler = { [weak self] (url: URL?, err: Error?) in
                         completionHandler = nil
-                        
+                        self?.cancelHandler = nil
+
+                        // If cancel() already resumed the continuation, skip — the UI is already torn down too.
+                        guard resumer.tryConsume() else { return }
+
                         //Clean up resources, but if canceled we should not as it's already deprovisioned
                         if err == nil || (err as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
                             if (sessionToKeepAlive != nil) {
@@ -42,20 +49,24 @@ import AppKit
                                 sessionToKeepAlive = nil
                             }
                         }
-                        
+
                         if let err = err {
                             if case ASWebAuthenticationSessionError.canceledLogin = err {
                                 continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, resultsAccessKey: nil))
                                 return;
                             }
                             else {
-                                
+
                                 continuation.resume(throwing:  TrinsicError.error(with: .unknownError, message: err.localizedDescription))
                                 return
                             }
                         }
                         guard let url = url else {
                             continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "We did not receive a url from the native completion handler"))
+                            return
+                        }
+                        guard let self = self else {
+                            continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "TrinsicUI was deallocated before the session result could be parsed"))
                             return
                         }
                         let (result, parseError) = self.parseUrl(url: url)
@@ -69,7 +80,7 @@ import AppKit
                             continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "An unknown error occured, we should never hit this code-branch"))
                         }
                     }
-                    
+
                     var _session: ASWebAuthenticationSession? = nil
                     if #available(iOS 17.4, *) {
                         if (callbackUrlScheme == "https") {
@@ -83,16 +94,34 @@ import AppKit
                     }
                     let session = _session!
                     sessionToKeepAlive = session
+
+                    // cancel() dismisses the system UI AND resumes the continuation directly — the native completion handler is not reliably invoked on programmatic .cancel().
+                    self.cancelHandler = { [weak self] in
+                        self?.cancelHandler = nil
+                        session.cancel()
+                        sessionToKeepAlive = nil
+                        guard resumer.tryConsume() else { return }
+                        continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, resultsAccessKey: nil))
+                    }
+
                     session.presentationContextProvider = self.presentationContextProvider;
                     session.start()
                 }
                 catch {
+                    guard resumer.tryConsume() else { return }
                     continuation.resume(throwing: error)
                 }
             }
         })
     }
-    
+
+    /// Cancels the active ``ASWebAuthenticationSession`` started by ``launchSession(launchUrl:callbackUrlScheme:)``, if one is in flight.
+    /// The corresponding ``launchSession`` call will return a ``LaunchSessionResult`` with ``canceled`` set to `true`.
+    /// Has no effect if no session is currently active.
+    @objc public func cancel() {
+        cancelHandler?()
+    }
+
     private func parseUrl(url: URL) -> (result: LaunchSessionResult?, parseError: Error?) {
         // Parse launchUrl into a URLComponents object
         guard let urlComponents = URLComponents(string: url.absoluteString) else {
@@ -160,5 +189,18 @@ import AppKit
         }
         
         return updatedUrl
+    }
+}
+
+private final class ResumeOnce {
+    private let lock = NSLock()
+    private var consumed = false
+
+    func tryConsume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if consumed { return false }
+        consumed = true
+        return true
     }
 }
