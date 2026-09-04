@@ -71,7 +71,13 @@ You can retrieve the launch url from a trusted backend that can reach out to the
 
 ```swift
 let trinsicUI = TrinsicUI()
-let result = try await trinsicUI.launchSession(launchUrl: "[REPLACE_ME]", callbackURL: "[REPLACE_ME]")
+let result = try await trinsicUI.launchSession(launchUrl: "[REPLACE_ME]", callbackUrlScheme: "[REPLACE_ME]")
+
+if let redirectToken = result.redirectToken {
+    // Send this token to your backend; it will play a core role in future
+    // high-assurance / same-device guarantees.
+    sendRedirectTokenToBackend(redirectToken)
+}
 ```
 
 ## SDK Versioning
