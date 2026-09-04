@@ -52,7 +52,7 @@ import AppKit
 
                         if let err = err {
                             if case ASWebAuthenticationSessionError.canceledLogin = err {
-                                continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, resultsAccessKey: nil))
+                                continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, redirectToken: nil, resultsAccessKey: nil))
                                 return;
                             }
                             else {
@@ -101,7 +101,7 @@ import AppKit
                         session.cancel()
                         sessionToKeepAlive = nil
                         guard resumer.tryConsume() else { return }
-                        continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, resultsAccessKey: nil))
+                        continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, redirectToken: nil, resultsAccessKey: nil))
                     }
 
                     session.presentationContextProvider = self.presentationContextProvider;
@@ -130,10 +130,17 @@ import AppKit
         
         let queryItems = urlComponents.queryItems ?? []
 
-        guard let successString = queryItems.first(where: { $0.name == "success" })?.value,
-            !successString.isEmpty,
-            let success = Bool(successString) else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find success in result url"))
+        let success: Bool
+        if let successQueryItem = queryItems.first(where: { $0.name == "success" }) {
+            guard let successString = successQueryItem.value,
+                !successString.isEmpty,
+                let parsedSuccess = Bool(successString) else {
+                return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot parse success in result url"))
+            }
+            success = parsedSuccess
+        } else {
+            // `success` is deprecated and will not be present in the future
+            success = true
         }
         
         let canceledString = queryItems.first(where: { $0.name == "canceled" })?.value
@@ -144,11 +151,9 @@ import AppKit
             return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find sessionId in result url"))
         }
         
-        guard let resultsAccessKey = queryItems.first(where: { $0.name == "resultsAccessKey" })?.value,
-            !resultsAccessKey.isEmpty else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "cannot find resultsAccessKey in result url"))
-        }
-        let result = LaunchSessionResult.init(success: success, canceled: canceled, sessionId: sessionId, resultsAccessKey: resultsAccessKey)
+        let redirectToken = queryItems.first(where: { $0.name == "redirectToken" })?.value
+        let resultsAccessKey = queryItems.first(where: { $0.name == "resultsAccessKey" })?.value
+        let result = LaunchSessionResult.init(success: success, canceled: canceled, sessionId: sessionId, redirectToken: redirectToken, resultsAccessKey: resultsAccessKey)
         return (result: result, parseError: nil)
     }
     
