@@ -13,6 +13,9 @@ import AppKit
 @objc public class TrinsicUI : NSObject {
     private var presentationContextProvider: ASWebAuthenticationPresentationContextProviding
     private var cancelHandler: (() -> Void)?
+    internal var makeAuthenticationSession: (URL, SessionCallback, @escaping ASWebAuthenticationSession.CompletionHandler) throws -> ASWebAuthenticationSession = {
+        try $1.makeSession(url: $0, completionHandler: $2)
+    }
 
     @objc public override init() {
         self.presentationContextProvider = TrinsicPresentationContextProvider()
@@ -26,28 +29,41 @@ import AppKit
 
 
     @objc public func launchSession(launchUrl: String, callbackUrlScheme: String) async throws -> LaunchSessionResult {
+        return try await launchSession(launchUrl: launchUrl, callback: SessionCallback(customScheme: callbackUrlScheme))
+    }
+
+    /// Launch a session using the same complete callback URL supplied as `redirectUrl`
+    /// when creating the session. HTTPS callbacks require iOS 17.4+ / macOS 14.4+
+    /// and a `webcredentials` associated domain. Custom-scheme URLs are also supported.
+    /// The callback URL must not contain a query, fragment, credentials or port.
+    @objc public func launchSession(launchUrl: String, callbackUrl: String) async throws -> LaunchSessionResult {
+        return try await launchSession(launchUrl: launchUrl, callback: SessionCallback(url: callbackUrl))
+    }
+
+    private func launchSession(launchUrl: String, callback: SessionCallback) async throws -> LaunchSessionResult {
         return try await withCheckedThrowingContinuation( { continuation in
-            Task {
+            Task { @MainActor in
                 // One-shot guard so cancel() and the native completion handler can race without double-resuming the continuation.
                 let resumer = ResumeOnce()
                 var completionHandler: ((URL?, Error?) -> Void)?
                 var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
                 do {
                     let formattedLaunchUrl = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl)
+                    let expectedSessionId = URLComponents(url: formattedLaunchUrl, resolvingAgainstBaseURL: false)?
+                        .queryItems?.first(where: { $0.name == "sessionId" })?.value
 
                     completionHandler = { [weak self] (url: URL?, err: Error?) in
                         completionHandler = nil
-                        self?.cancelHandler = nil
 
                         // If cancel() already resumed the continuation, skip — the UI is already torn down too.
                         guard resumer.tryConsume() else { return }
+                        self?.cancelHandler = nil
 
-                        //Clean up resources, but if canceled we should not as it's already deprovisioned
+                        // Release the retained session even when the native UI reports cancellation.
+                        let completedSession = sessionToKeepAlive as? ASWebAuthenticationSession
+                        sessionToKeepAlive = nil
                         if err == nil || (err as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
-                            if (sessionToKeepAlive != nil) {
-                                (sessionToKeepAlive as! ASWebAuthenticationSession).cancel()
-                                sessionToKeepAlive = nil
-                            }
+                            completedSession?.cancel()
                         }
 
                         if let err = err {
@@ -63,6 +79,11 @@ import AppKit
                         }
                         guard let url = url else {
                             continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "We did not receive a url from the native completion handler"))
+                            return
+                        }
+                        guard callback.matchesResult(url, sessionId: expectedSessionId) else {
+                            continuation.resume(throwing: TrinsicError.error(with: .unparsableResultUrl,
+                                message: "The result URL does not match the requested callback URL and session ID."))
                             return
                         }
                         guard let self = self else {
@@ -81,33 +102,26 @@ import AppKit
                         }
                     }
 
-                    var _session: ASWebAuthenticationSession? = nil
-                    if #available(iOS 17.4, *) {
-                        if (callbackUrlScheme == "https") {
-                            //When appropriate we should investigate/dive deeper.
-                            throw TrinsicError.error(with: .unsupportedHttpsLinking, message: "We don't support https deep linking yet. Please contact Trinsic support.")
-                        } else {
-                            _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callback: ASWebAuthenticationSession.Callback.customScheme(callbackUrlScheme), completionHandler: completionHandler!)
-                        }
-                    } else {
-                        _session = ASWebAuthenticationSession(url: formattedLaunchUrl, callbackURLScheme: callbackUrlScheme, completionHandler: completionHandler!)
-                    }
-                    let session = _session!
+                    let session = try self.makeAuthenticationSession(formattedLaunchUrl, callback, completionHandler!)
                     sessionToKeepAlive = session
 
                     // cancel() dismisses the system UI AND resumes the continuation directly — the native completion handler is not reliably invoked on programmatic .cancel().
                     self.cancelHandler = { [weak self] in
+                        guard resumer.tryConsume() else { return }
                         self?.cancelHandler = nil
                         session.cancel()
                         sessionToKeepAlive = nil
-                        guard resumer.tryConsume() else { return }
+                        completionHandler = nil
                         continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, redirectToken: nil, resultsAccessKey: nil))
                     }
 
                     session.presentationContextProvider = self.presentationContextProvider;
-                    session.start()
+                    if !session.start() {
+                        completionHandler?(nil, TrinsicError.error(with: .unknownError, message: "Could not start the web authentication session."))
+                    }
                 }
                 catch {
+                    completionHandler = nil
                     guard resumer.tryConsume() else { return }
                     continuation.resume(throwing: error)
                 }
@@ -115,7 +129,7 @@ import AppKit
         })
     }
 
-    /// Cancels the active ``ASWebAuthenticationSession`` started by ``launchSession(launchUrl:callbackUrlScheme:)``, if one is in flight.
+    /// Cancels the active ``ASWebAuthenticationSession`` started by either `launchSession` overload, if one is in flight.
     /// The corresponding ``launchSession`` call will return a ``LaunchSessionResult`` with ``canceled`` set to `true`.
     /// Has no effect if no session is currently active.
     @objc public func cancel() {
