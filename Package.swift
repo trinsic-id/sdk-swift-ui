@@ -16,5 +16,8 @@ let package = Package(
         .target(
             name: "TrinsicUI",
             dependencies: []),
+        .testTarget(
+            name: "TrinsicUITests",
+            dependencies: ["TrinsicUI"]),
     ]
 )

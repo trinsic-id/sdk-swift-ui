@@ -18,7 +18,7 @@ See the [Trinsic docs](https://docs.trinsic.id/docs/) for more detailed informat
 
 This library supports launching both [Widget](https://docs.trinsic.id/docs/widget-session) and [Hosted Provider](https://docs.trinsic.id/docs/hosted-provider-session) Sessions.
 
-You _must_ specify a `redirectUrl` when creating either kind of Session, and that `redirectUrl` _must_ use a custom scheme which you register against your app (see below).
+You _must_ specify a `redirectUrl` when creating either kind of Session, and that `redirectUrl` must be either an HTTPS callback on a domain associated with your app or a registered custom-scheme URL (see below).
 
 ### Direct Provider Sessions
 
@@ -48,7 +48,7 @@ pod 'TrinsicUI', '~> [latest version]'
 
 This library makes use of `ASWebAuthenticationSession` on iOS and macOS.
 
-Therefore, you must register a custom scheme against your app on both iOS and macOS in order for the library to be able to capture the results of a session.
+For a custom-scheme callback, register the scheme against your app on both iOS and macOS. The existing `callbackUrlScheme` API remains supported. Pass only the scheme to that API, never `https` or a complete URL.
 
 This custom scheme **should be globally unique to your organization and application**.
 
@@ -79,6 +79,52 @@ if let redirectToken = result.redirectToken {
     sendRedirectTokenToBackend(redirectToken)
 }
 ```
+
+## HTTPS callbacks (iOS 17.4+ / macOS 14.4+)
+
+The backend's `redirectUrl` tells Trinsic where to redirect the browser when verification finishes. The SDK also needs that address to tell Apple's `ASWebAuthenticationSession` which redirect should finish the browser session and return a result to your app. For HTTPS, Apple's [`ASWebAuthenticationSession.Callback.https(host:path:)`](https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession/callback/https(host:path:)) API requires the expected host and path before the browser opens. Setting `redirectUrl` on the backend does not configure this native callback handler, and the SDK does not fetch the Session's redirect configuration from the backend.
+
+Pass the complete callback address to the `callbackUrl` overload. Set the same address as `redirectUrl` when your backend creates the Session, and register it in the Trinsic redirect allowlist for the relevant environment. The SDK does not change the Session's redirect URL.
+
+```swift
+let result = try await trinsicUI.launchSession(
+    launchUrl: launchUrl,
+    callbackUrl: "https://example.com/session-complete"
+)
+if !result.canceled {
+    // Send result.sessionId and result.redirectToken to your backend.
+}
+```
+
+The `callbackUrl` overload matches the returned URL's scheme and host case-insensitively and its path exactly, including case and percent-encoding. For example, `/session-complete`, `/session-complete/` and `/Session-complete` are different paths. An empty HTTPS path is treated as `/`.
+
+Query parameters are handled separately from the callback address. Supply an absolute HTTPS or custom-scheme URL without credentials, an explicit port, query or fragment; caller-supplied query parameters such as `?state=123` are not supported by this overload. Trinsic appends result parameters, so a return URL such as `https://example.com/session-complete?sessionId=123&redirectToken=...` matches the callback above. The SDK also requires exactly one `sessionId` parameter matching the launched Session before parsing the result.
+
+For HTTPS, configure **Associated Domains** on your app target and provisioning profiles:
+
+```text
+webcredentials:example.com
+```
+
+Apple's authentication-session HTTPS callback requires the **webcredentials** service. An `applinks` entry by itself is insufficient. Serve this JSON at `https://example.com/.well-known/apple-app-site-association`, without a redirect, using your actual domain and application identifier:
+
+```json
+{
+  "webcredentials": {
+    "apps": ["YOUR_APP_ID_PREFIX.YOUR_BUNDLE_ID"]
+  }
+}
+```
+
+If the domain also opens your app from links outside an active SDK session, keep `applinks:example.com` in your entitlements and the corresponding `applinks` section in the same association file. Handle those incoming links in your app as usual; the SDK captures verification callbacks through its authentication session and does not require an `onOpenURL` forwarding hook.
+
+HTTPS callbacks fail with `unsupportedHttpsLinking` on iOS versions before 17.4. For those devices, create the Session with a registered custom-scheme `redirectUrl` and use either the existing scheme-only API or `callbackUrl: "your-scheme://callback"`. There is no automatic downgrade, because the backend must use the same redirect address. `cancel()` applies to both overloads.
+
+Keep a dedicated callback path, such as `/session-complete`, separate from links that launch a new verification, such as `/start-verification`.
+
+### Validation
+
+Run `swift test` for callback matching and native callback selection tests. Before releasing an app, install a signed build after publishing the association file and complete a real Session on iOS 17.4+; also verify cancellation and custom-scheme fallback. Unit tests do not verify the live domain association or backend allowlist.
 
 ## SDK Versioning
 
