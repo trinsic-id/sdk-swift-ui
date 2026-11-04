@@ -61,6 +61,8 @@ import TrinsicUI
 Create an instance of TrinsicUI and launch a session.
 You can retrieve the launch url from a trusted backend that can reach out to the Trinsic servers. [See our API libraries.](https://github.com/trinsic-id/sdk#api-libraries)
 
+The `launchUrl` parameter must contain exactly one nonempty `sessionId` query parameter (for example, `https://verify.trinsic.id/?sessionId=123`). If you wrap the SDK or supply a wrapper/redirect URL, preserve `sessionId` as a top-level query parameter on the URL passed to `launchSession`, not just inside an embedded URL. The SDK reads this value to validate the returned session ID, and passes the launch URL to the native browser session unchanged without adding `launchMode`.
+
 ```swift
 let trinsicUI = TrinsicUI()
 let result = try await trinsicUI.launchSession(launchUrl: "[REPLACE_ME]", callbackUrlScheme: "[REPLACE_ME]")
@@ -71,6 +73,15 @@ if let redirectToken = result.redirectToken {
     sendRedirectTokenToBackend(redirectToken)
 }
 ```
+
+`LaunchSessionResult` contains:
+
+- `sessionId: String?`: the decoded ID from the returned URL, validated against the launch URL's ID. It is `nil` on local cancellation; other results require exactly one matching ID.
+- `redirectToken: String?`: the decoded token from the returned URL. Missing or empty values are `nil`; if the parameter is repeated, the first value is used.
+- `callbackUrl: String?`: the full URL returned by the native authentication session, including its query and fragment. This is `nil` on local cancellation.
+- `canceled: Bool`: `true` on local cancellation or when the returned URL contains `canceled=true`.
+
+`success` and `resultsAccessKey` are no longer result properties. Use your backend's Trinsic API response for Session status and its stored results access key.
 
 ## HTTPS callbacks (iOS 17.4+ / macOS 14.4+)
 
@@ -88,9 +99,9 @@ if !result.canceled {
 }
 ```
 
-The `callbackUrl` overload matches the returned URL's scheme and host case-insensitively and its path exactly, including case and percent-encoding. For example, `/session-complete`, `/session-complete/` and `/Session-complete` are different paths. An empty HTTPS path is treated as `/`.
+Callback matching is handled by Apple's `ASWebAuthenticationSession`. HTTPS callbacks use the host and decoded path, so equivalent percent-encodings match (for example, `/session%2Dcomplete` and `/session-complete`). An empty HTTPS path is treated as `/`. Custom-scheme callbacks match only the scheme, even when a complete callback URL is supplied; their host and path do not restrict matching.
 
-Query parameters are handled separately from the callback address. Supply an absolute HTTPS or custom-scheme URL without credentials, an explicit port, query or fragment; caller-supplied query parameters such as `?state=123` are not supported by this overload. Trinsic appends result parameters, so a return URL such as `https://example.com/session-complete?sessionId=123&redirectToken=...` matches the callback above. The SDK also requires exactly one `sessionId` parameter matching the launched Session before parsing the result.
+Credentials, an explicit port, query parameters, and a fragment in the configured callback URL are not passed to Apple's matcher. The SDK does not reject these fields or perform additional callback address comparisons. It separately requires exactly one `sessionId` in the returned URL whose decoded value matches the launch URL's ID. Missing, empty, duplicate or mismatched returned IDs throw an error. Local cancellation does not require a returned URL or session ID.
 
 For HTTPS, configure **Associated Domains** on your app target and provisioning profiles:
 
