@@ -1,140 +1,99 @@
-//
-//  TrinsicMdl.swift
-//  TrinsicUI
-//
-//  Created by Buster Townsend on 9/9/25.
-//
-
 import PassKit
 
-/// Class which performs mDL Exchanges. Call this after creating an exchange via Trinsic's CreateMDLExchange API
+/// Presents native Apple Wallet identity requests. Submit the returned token to Trinsic unchanged.
 @available(iOS 17.0, *)
 @available(macOS, unavailable, message: "Not supported on macOS.")
 @available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 @MainActor
 public class TrinsicMdl {
     private let controller: PKIdentityAuthorizationController
+    private let diagnosticHandler: ((NativeWalletDiagnostic) -> Void)?
+    internal var capabilities = NativeWalletCapabilities.current
 
-    public init(controller: PKIdentityAuthorizationController? = nil) {
+    public init(controller: PKIdentityAuthorizationController? = nil,
+                diagnosticHandler: ((NativeWalletDiagnostic) -> Void)? = nil) {
         self.controller = controller ?? PKIdentityAuthorizationController()
+        self.diagnosticHandler = diagnosticHandler
     }
 
-    /// Perform an mDL Exchange
-    /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
-    /// - Returns: An exchange result containing an exchangeId and token
-    @available(macOS 13.0, *)
-    public func performMdlExchange(_ requestObjectBase64Url: String)
-        async throws -> MdlExchangeResult
-    {
-        // Decode base64url string
-        let exchangeRequestJson = try decodeBase64UrlString(requestObjectBase64Url)
+    /// Document types implemented by this SDK and available on the running iOS version.
+    /// This does not establish app entitlements or the presence of a credential in Wallet.
+    public static var supportedDocumentTypes: [String] {
+        [NativeWalletDocumentType.driversLicense, .nationalIDCard, .photoID]
+            .filter { NativeWalletCapabilities.current.supports($0) }.map(\.rawValue)
+    }
 
-        // Parse exchange request
-        let exchangeRequest = try parseExchangeRequest(exchangeRequestJson)
-        
-        // Create PassKit request
-        let descriptor = try exchangeRequest.toDriversLicenseDescriptor()
+    /// Accepts the challenge exactly as supplied by the backend, including document alternatives.
+    public func performMdlExchange(_ requestObjectBase64Url: String) async throws -> MdlExchangeResult {
+        try Task.checkCancellation()
+        let exchange = try NativeWalletRequestParser.parse(requestObjectBase64Url)
+        let descriptors = try supportedDescriptors(exchange)
+        let descriptor = await selectDescriptor(descriptors)
+        try Task.checkCancellation()
         let request = PKIdentityRequest()
         request.descriptor = descriptor
-        request.merchantIdentifier = exchangeRequest.requestObject.merchantId
-
-        guard
-            let nonce = Data(base64Encoded: exchangeRequest.requestObject.nonce)
-        else {
-            throw TrinsicMdlError.invalidRequest
-        }
-        request.nonce = nonce
-
-        // Perform verification
+        request.merchantIdentifier = exchange.requestObject.merchantId
+        request.nonce = try NativeWalletBase64.decode(exchange.requestObject.nonce)
         do {
             let document = try await controller.requestDocument(request)
-            let tokenBase64 = document.encryptedData.base64EncodedString()
-            return MdlExchangeResult(
-                exchangeId: exchangeRequest.exchangeId,
-                token: tokenBase64
-            )
+            try Task.checkCancellation()
+            return MdlExchangeResult(exchangeId: exchange.exchangeId, encryptedData: document.encryptedData)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            // Preserve PassKit's error (including cancellation) for callers to inspect.
             throw TrinsicMdlError.documentRequestFailed(error)
         }
     }
 
-    /// Checks if a credential exists in the user's wallet which can fulfill a Trinsic mDL Exchange.
-    /// - Parameter requestObjectBase64Url: The request object string exactly as received from Trinsic's CreateMDLExchange API
-    /// - Returns: True if the user has an eligible credential; false if not
-    @available(macOS 13.0, *)
-    public func canRequestDriversLicense(_ requestObjectBase64Url: String)
-        async throws -> Bool
-    {
-        // Decode base64url string
-        let exchangeRequestJson = try decodeBase64UrlString(requestObjectBase64Url)
-
-        // Parse exchange request
-        let exchangeRequest = try parseExchangeRequest(exchangeRequestJson)
-        
-        // Create PassKit request
-        let descriptor = try exchangeRequest.toDriversLicenseDescriptor()
-        
-        // Perform query
-        return await controller.canRequestDocument(descriptor)
-    }
-    
-    /// Checks if a credential exists in the user's wallet which can fulfill a Trinsic mDL Exchange.
-    /// - Returns: True if the user has an eligible credential; false if not
-    @available(macOS 13.0, *)
-    public func userHasDriversLicense()
-        async throws -> Bool
-    {
-        // Create a generic PassKit request for a drivers license
-        let descriptor = PKIdentityDriversLicenseDescriptor()
-        
-        // Perform query
-        return await controller.canRequestDocument(descriptor)
-    }
-
-    private func parseExchangeRequest(_ jsonExchangeRequest: Data) throws
-        -> ParsedExchangeRequest
-    {
-        // Decode outer exchange request from JSON
-        let decoded = try JSONDecoder().decode(
-            ExchangeRequest.self,
-            from: jsonExchangeRequest
-        )
-
-        // Outer exchange request contains an inner JSON string -- decode that
-        let innerDecoded = try JSONDecoder().decode(
-            ExchangeRequestBody.self,
-            from: decoded.requestObject.data(using: .utf8)!
-        )
-
-        // Construct new bundle
-        return ParsedExchangeRequest(
-            exchangeId: decoded.exchangeId,
-            type: decoded.type,
-            platform: decoded.platform,
-            exchangeMechanism: decoded.exchangeMechanism,
-            requestObject: innerDecoded
-        )
-    }
-
-    @available(macOS 13.0, *)
-    private func decodeBase64UrlString(_ base64Url: String) throws -> Data {
-        // Convert base64url to base64
-        var base64 =
-            base64Url
-            .replacing("_", with: "/")
-            .replacing("/", with: "_")
-
-        // Add padding
-        let paddingLength = 4 - (base64.count % 4)
-        if paddingLength < 4 {
-            base64.append(String(repeating: "=", count: paddingLength))
+    /// Checks whether Wallet can fulfill any supported document alternative in the challenge.
+    public func canRequestDocument(_ requestObjectBase64Url: String) async throws -> Bool {
+        try Task.checkCancellation()
+        let exchange = try NativeWalletRequestParser.parse(requestObjectBase64Url)
+        let descriptors = try supportedDescriptors(exchange)
+        if #available(iOS 26.0, *), capabilities.isAtLeast(26), descriptors.count > 1 {
+            let available = await controller.canRequestDocument(PKIdentityAnyOfDescriptor(descriptors: descriptors))
+            try Task.checkCancellation()
+            return available
         }
-
-        // Decode base64 to a Data
-        if let data = Data(base64Encoded: base64) {
-            return data
+        for descriptor in descriptors {
+            let available = await controller.canRequestDocument(descriptor)
+            try Task.checkCancellation()
+            if available { return true }
         }
-        throw TrinsicMdlError.invalidRequest
+        return false
+    }
+
+    /// Compatibility alias. This now checks every supported document type in the challenge.
+    public func canRequestDriversLicense(_ requestObjectBase64Url: String) async throws -> Bool {
+        try await canRequestDocument(requestObjectBase64Url)
+    }
+
+    /// Generic driver's-license/state-ID probe, independent of a specific challenge.
+    public func userHasDriversLicense() async throws -> Bool {
+        await controller.canRequestDocument(PKIdentityDriversLicenseDescriptor())
+    }
+
+    private func supportedDescriptors(_ exchange: ParsedExchangeRequest) throws -> [any PKIdentityDocumentDescriptor] {
+        try ExchangeRequestTransformer.descriptors(from: exchange, capabilities: capabilities,
+                                                   diagnosticHandler: diagnosticHandler)
+    }
+
+    private func selectDescriptor(_ descriptors: [any PKIdentityDocumentDescriptor]) async -> any PKIdentityDocumentDescriptor {
+        // supportedDescriptors guarantees a nonempty array.
+        if descriptors.count == 1 { return descriptors[0] }
+        if #available(iOS 26.0, *), capabilities.isAtLeast(26) {
+            return PKIdentityAnyOfDescriptor(descriptors: descriptors)
+        }
+        // Before iOS 26 there is no composite descriptor. Respect backend preference order
+        // and choose the first available alternative without presenting multiple consent sheets.
+        NativeWalletDiagnostics.emit(.selectingSingleDocument, to: diagnosticHandler)
+        for descriptor in descriptors {
+            if Task.isCancelled { break }
+            if await controller.canRequestDocument(descriptor) { return descriptor }
+        }
+        // Availability is advisory; Wallet supplies the definitive error if none is available.
+        return descriptors[0]
     }
 }
 
