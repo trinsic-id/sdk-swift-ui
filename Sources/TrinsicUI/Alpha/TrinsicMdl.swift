@@ -24,11 +24,12 @@ public class TrinsicMdl {
     }
 
     /// Accepts the challenge exactly as supplied by the backend, including document alternatives.
+    /// Throws `documentRequestUnavailable` without presenting Wallet if preflight rejects every candidate.
     public func performMdlExchange(_ requestObjectBase64Url: String) async throws -> MdlExchangeResult {
         try Task.checkCancellation()
         let exchange = try NativeWalletRequestParser.parse(requestObjectBase64Url)
         let descriptors = try supportedDescriptors(exchange)
-        let descriptor = await selectDescriptor(descriptors)
+        let descriptor = try await selectDescriptor(descriptors)
         try Task.checkCancellation()
         let request = PKIdentityRequest()
         request.descriptor = descriptor
@@ -79,29 +80,37 @@ public class TrinsicMdl {
                                                    diagnosticHandler: diagnosticHandler)
     }
 
-    private func selectDescriptor(_ descriptors: [any PKIdentityDocumentDescriptor]) async -> any PKIdentityDocumentDescriptor {
+    private func selectDescriptor(_ descriptors: [any PKIdentityDocumentDescriptor]) async throws -> any PKIdentityDocumentDescriptor {
         // supportedDescriptors guarantees a nonempty array.
-        if descriptors.count == 1 { return descriptors[0] }
-        if #available(iOS 26.0, *), capabilities.isAtLeast(26) {
-            return PKIdentityAnyOfDescriptor(descriptors: descriptors)
+        var candidates = descriptors
+        if #available(iOS 26.0, *), capabilities.isAtLeast(26), descriptors.count > 1 {
+            candidates = [PKIdentityAnyOfDescriptor(descriptors: descriptors)]
+        } else if descriptors.count > 1 {
+            // Before iOS 26, try supported alternatives in backend preference order.
+            NativeWalletDiagnostics.emit(.selectingSingleDocument, to: diagnosticHandler)
         }
-        // Before iOS 26 there is no composite descriptor. Respect backend preference order
-        // and choose the first available alternative without presenting multiple consent sheets.
-        NativeWalletDiagnostics.emit(.selectingSingleDocument, to: diagnosticHandler)
-        for descriptor in descriptors {
-            if Task.isCancelled { break }
-            if await controller.canRequestDocument(descriptor) { return descriptor }
+        for descriptor in candidates {
+            try Task.checkCancellation()
+            let available = await controller.canRequestDocument(descriptor)
+            try Task.checkCancellation()
+            if available { return descriptor }
         }
-        // Availability is advisory; Wallet supplies the definitive error if none is available.
-        return descriptors[0]
+        // A denied preflight can mean missing entitlements. Calling requestDocument
+        // anyway can trigger an uncatchable CoreIDV assertion instead of an Error.
+        throw TrinsicMdlError.documentRequestUnavailable
     }
 }
 
 public enum TrinsicMdlError: Error {
     case notSupported
+    /// Legacy case retained for existing clients; no longer emitted for preflight rejection.
+    @available(*, deprecated, renamed: "documentRequestUnavailable")
     case deviceDoesNotSupportMdl
     case unsupportedType
     case invalidRequest
     case documentRequestFailed(Error)
     case unknownError(Error)
+    /// Wallet cannot fulfill this request, for any document type. Possible reasons include
+    /// missing entitlements, an unsupported device, or no eligible ID; preflight doesn't distinguish them.
+    case documentRequestUnavailable
 }
