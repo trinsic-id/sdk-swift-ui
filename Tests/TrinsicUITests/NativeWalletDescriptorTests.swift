@@ -317,15 +317,34 @@ final class NativeWalletDescriptorTests: XCTestCase {
             capabilities: .init(version: .init(majorVersion: 17, minorVersion: 0, patchVersion: 0)), diagnosticHandler: nil))
     }
 
-    func testFalseAvailabilityStillAllowsWalletToReturnDefinitiveError() async throws {
-        let spy = NativeWalletControllerSpy()
-        spy.availability = { _ in false }
-        let client = TrinsicMdl(controller: spy)
-        let request = try walletChallenge()
-        let available = try await client.canRequestDocument(request)
-        XCTAssertFalse(available)
-        await assertWalletCancellation(client, request)
-        XCTAssertNotNil(spy.request)
+    func testDeniedPreflightNeverRequestsDocumentForSingleCompositeOrLegacyAlternatives() async throws {
+        for legacy in [false, true] {
+            var requests = [try walletChallenge(),
+                            try walletChallenge(documents: [walletDocument("DriversLicense"), walletDocument("DriversLicense")])]
+            if !legacy {
+                if #available(iOS 18.0, *) {
+                    requests.append(try walletChallenge(documents: [walletDocument("NationalIDCard", region: "JP")]))
+                }
+                if #available(iOS 26.0, *) {
+                    requests.append(try walletChallenge(documents: [walletDocument("PhotoID")]))
+                    requests.append(try walletChallenge(documents: [walletDocument("PhotoID"), walletDocument("DriversLicense")]))
+                }
+            }
+            for request in requests {
+                let spy = NativeWalletControllerSpy()
+                spy.availability = { _ in false }
+                let client = TrinsicMdl(controller: spy)
+                if legacy { client.capabilities = .init(version: .init(majorVersion: 17, minorVersion: 0, patchVersion: 0)) }
+                // Call perform directly: callers must not need their own preflight to avoid a fatal OS assertion.
+                do {
+                    _ = try await client.performMdlExchange(request)
+                    XCTFail("A denied preflight must fail before requestDocument")
+                } catch TrinsicMdlError.documentRequestUnavailable { }
+                catch { XCTFail("Unexpected error: \(error)") }
+                XCTAssertFalse(spy.checked.isEmpty)
+                XCTAssertNil(spy.request)
+            }
+        }
     }
 
     func testCancellationBeforePresentationDoesNotInvokeController() async throws {
@@ -340,6 +359,38 @@ final class NativeWalletDescriptorTests: XCTestCase {
         catch is CancellationError { }
         XCTAssertNil(spy.request)
         XCTAssertTrue(spy.checked.isEmpty)
+    }
+
+    func testPerformRechecksAvailabilityAfterEarlierSuccessfulProbe() async throws {
+        let spy = NativeWalletControllerSpy()
+        var checks = 0
+        spy.availability = { _ in checks += 1; return checks == 1 }
+        let client = TrinsicMdl(controller: spy)
+        let request = try walletChallenge()
+        let available = try await client.canRequestDocument(request)
+        XCTAssertTrue(available)
+        do {
+            _ = try await client.performMdlExchange(request)
+            XCTFail("An earlier successful probe must not bypass the current denial")
+        } catch TrinsicMdlError.documentRequestUnavailable { }
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(checks, 2)
+        XCTAssertNil(spy.request)
+    }
+
+    func testCancellationDuringPreflightDoesNotBecomeAnAvailabilityFailure() async throws {
+        let spy = NativeWalletControllerSpy()
+        let client = TrinsicMdl(controller: spy)
+        let request = try walletChallenge()
+        let task = Task { try await client.performMdlExchange(request) }
+        spy.availability = { _ in task.cancel(); return false }
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch is CancellationError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(spy.checked.count, 1)
+        XCTAssertNil(spy.request)
     }
 
     private func assertWalletCancellation(_ client: TrinsicMdl, _ request: String) async {

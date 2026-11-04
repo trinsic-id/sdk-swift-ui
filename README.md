@@ -24,7 +24,11 @@ You _must_ specify a `redirectUrl` when creating either kind of Session, and tha
 
 For [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-session), the browser API handles `LaunchBrowser` with `CaptureRedirect`.
 
-For native Apple Wallet, build with Xcode 26+. `TrinsicMdl` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` (an advisory check) and `performMdlExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
+For native Apple Wallet, build with Xcode 26+. `TrinsicMdl` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` and `performMdlExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
+
+A false availability result must stop presentation: Apple may terminate the app for an unentitled request. `performMdlExchange` also checks availability internally and throws `TrinsicMdlError.documentRequestUnavailable` if no candidate passes, including when called without a prior availability check. This applies to every document type and does not imply a hardware limitation: missing entitlements or an unavailable credential can also cause rejection. A true result does not validate merchant configuration or guarantee verification success.
+
+The legacy `deviceDoesNotSupportMdl` case remains deprecated for existing references; this path no longer throws it. Update exhaustive switches over `TrinsicMdlError` to handle `documentRequestUnavailable` when upgrading.
 
 The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet. Use `diagnosticHandler` for warnings and errors. Keep the single-document format for older SDK releases.
 
