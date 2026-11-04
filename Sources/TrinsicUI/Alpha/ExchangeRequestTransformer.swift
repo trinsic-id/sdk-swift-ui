@@ -45,7 +45,8 @@ public class ExchangeRequestTransformer {
         return descriptor
     }
 
-    /// Returns all supported document alternatives. Unknown and OS-unavailable types are skipped.
+    /// Returns complete document alternatives supported by this SDK and OS.
+    /// A document with any unsupported attribute is skipped in its entirety.
     public static func toPKIdentityDocumentDescriptors(from request: ParsedExchangeRequest,
         diagnosticHandler: ((NativeWalletDiagnostic) -> Void)? = nil) throws -> [any PKIdentityDocumentDescriptor] {
         try descriptors(from: request, capabilities: .current, diagnosticHandler: diagnosticHandler)
@@ -83,15 +84,29 @@ public class ExchangeRequestTransformer {
                 throw ExchangeRequestTransformerError.emptyRequestedAttributes(type.rawValue)
             }
             var seen = Set<String>()
+            var unsupportedAttributes: [String] = []
             for attribute in document.requestedAttributes {
                 guard seen.insert(attribute.attributeType).inserted, attribute.intentToStore >= -1 else {
                     throw ExchangeRequestTransformerError.invalidAttribute(attribute.attributeType)
                 }
-                let element = try identityElement(attribute, documentType: type, capabilities: capabilities)
-                descriptor.addElements([element], intentToStore: .intent(attribute.intentToStore))
+                do {
+                    let element = try identityElement(attribute, documentType: type, capabilities: capabilities)
+                    descriptor.addElements([element], intentToStore: .intent(attribute.intentToStore))
+                } catch ExchangeRequestTransformerError.unsupportedAttribute(let name) {
+                    // Continue validating the remaining attributes so unsupported
+                    // fields cannot mask malformed known requirements.
+                    unsupportedAttributes.append(name)
+                }
             }
             guard !(seen.contains("Age") && seen.contains("AgeAtLeastX")) else {
                 throw ExchangeRequestTransformerError.invalidAttribute("Age and AgeAtLeastX cannot be combined")
+            }
+            if !unsupportedAttributes.isEmpty {
+                for name in unsupportedAttributes {
+                    NativeWalletDiagnostics.emit(.unsupportedAttribute, documentType: type.rawValue,
+                                                 attributeType: name, to: diagnosticHandler)
+                }
+                continue
             }
             result.append(descriptor)
         }
@@ -116,47 +131,45 @@ public class ExchangeRequestTransformer {
     private static func identityElement(_ attribute: ExchangeRequestAttribute, documentType: NativeWalletDocumentType,
                                         capabilities: NativeWalletCapabilities) throws -> PKIdentityElement {
         let name = attribute.attributeType
-        let common: Set<String> = ["GivenName", "FamilyName", "Portrait", "Address", "DateOfBirth", "Age", "AgeAtLeastX", "Sex", "DocumentNumber"]
-        let photo: Set<String> = ["IssuingAuthority", "DocumentIssueDate", "DocumentExpirationDate"]
-        let license: Set<String> = ["DrivingPrivileges", "DocumentDHSComplianceStatus", "Height", "Weight", "EyeColor",
-                                    "HairColor", "OrganDonorStatus", "VeteranStatus"]
-        guard common.contains(name) || (documentType != .nationalIDCard && photo.contains(name))
-                || (documentType == .driversLicense && license.contains(name)) else {
+        guard let type = NativeWalletAttributeType(rawValue: name) else {
             throw ExchangeRequestTransformerError.unsupportedAttribute(name)
         }
-        guard attribute.ageAtLeastXArgument == nil || name == "AgeAtLeastX" else {
+        guard attribute.ageAtLeastXArgument == nil || type == .ageAtLeastX else {
             throw ExchangeRequestTransformerError.invalidAttribute(name)
         }
-        switch name {
-        case "GivenName": return .givenName
-        case "FamilyName": return .familyName
-        case "Portrait": return .portrait
-        case "Address": return .address
-        case "DateOfBirth": return .dateOfBirth
-        case "Age": return .age
-        case "AgeAtLeastX":
+        guard type.supports(documentType) else {
+            throw ExchangeRequestTransformerError.unsupportedAttribute(name)
+        }
+        switch type {
+        case .givenName: return .givenName
+        case .familyName: return .familyName
+        case .portrait: return .portrait
+        case .address: return .address
+        case .dateOfBirth: return .dateOfBirth
+        case .age: return .age
+        case .ageAtLeastX:
             guard let age = attribute.ageAtLeastXArgument, (1...125).contains(age) else {
                 throw ExchangeRequestTransformerError.invalidAttribute(name)
             }
             return .age(atLeast: age)
-        case "IssuingAuthority": return .issuingAuthority
-        case "DocumentIssueDate": return .documentIssueDate
-        case "DocumentExpirationDate": return .documentExpirationDate
-        case "DocumentNumber": return .documentNumber
-        case "DrivingPrivileges": return .drivingPrivileges
-        case "Sex":
+        case .issuingAuthority: return .issuingAuthority
+        case .documentIssueDate: return .documentIssueDate
+        case .documentExpirationDate: return .documentExpirationDate
+        case .documentNumber: return .documentNumber
+        case .drivingPrivileges: return .drivingPrivileges
+        case .sex:
             if #available(iOS 17.2, *), capabilities.isAtLeast(17, 2) { return .sex }
-        case "DocumentDHSComplianceStatus":
+        case .documentDHSComplianceStatus:
             if #available(iOS 17.2, *), capabilities.isAtLeast(17, 2) { return .documentDHSComplianceStatus }
-        default:
+        case .height, .weight, .eyeColor, .hairColor, .organDonorStatus, .veteranStatus:
             if #available(iOS 26.0, *), capabilities.isAtLeast(26) {
-                switch name {
-                case "Height": return .height
-                case "Weight": return .weight
-                case "EyeColor": return .eyeColor
-                case "HairColor": return .hairColor
-                case "OrganDonorStatus": return .organDonorStatus
-                case "VeteranStatus": return .veteranStatus
+                switch type {
+                case .height: return .height
+                case .weight: return .weight
+                case .eyeColor: return .eyeColor
+                case .hairColor: return .hairColor
+                case .organDonorStatus: return .organDonorStatus
+                case .veteranStatus: return .veteranStatus
                 default: break
                 }
             }

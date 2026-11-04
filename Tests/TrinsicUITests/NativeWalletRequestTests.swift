@@ -49,6 +49,63 @@ final class NativeWalletRequestTests: XCTestCase {
         XCTAssertEqual(request.requestObject.documents[1].requestedAttributes[0].attributeType, "GivenName")
     }
 
+    func testExtraJSONPropertiesDoNotChangeKnownRequests() throws {
+        var document = walletDocument("DriversLicense", attributes: [
+            ["attributeType": "AgeAtLeastX", "intentToStore": 30, "ageAtLeastXArgument": 21,
+             "futureOptions": ["format": [1, 2, 3]]]
+        ])
+        document["displayLabel"] = ["text": "License"]
+        // Exercise both the legacy shape and document alternatives.
+        for documents in [nil, [document]] {
+            var changes: [String: Any] = ["futureBodyProperty": ["enabled": true]]
+            if documents == nil { changes.merge(document) { _, value in value } }
+            let request = try NativeWalletRequestParser.parse(walletChallenge(documents: documents,
+                bodyChanges: changes, envelopeChanges: ["futureEnvelopeProperty": "value"]))
+            let decoded = try XCTUnwrap(request.requestObject.documents.first)
+            XCTAssertEqual(decoded.appleDocumentType, "DriversLicense")
+            XCTAssertEqual(decoded.requestedAttributes.count, 1)
+            XCTAssertEqual(decoded.requestedAttributes[0].attributeType, "AgeAtLeastX")
+            XCTAssertEqual(decoded.requestedAttributes[0].ageAtLeastXArgument, 21)
+            XCTAssertEqual(decoded.requestedAttributes[0].intentToStore, 30)
+            XCTAssertEqual(try NativeWalletBase64.decode(request.requestObject.nonce), walletNonce)
+        }
+    }
+
+    func testFutureAttributeArgumentsAreNotDecodedAsKnownArguments() throws {
+        let request = try NativeWalletRequestParser.parse(walletChallenge(documents: [
+            walletDocument("DriversLicense", attributes: [
+                ["attributeType": "FutureField", "intentToStore": 0,
+                 "ageAtLeastXArgument": ["future": true], "ageOverArgument": "future-schema"]
+            ]), walletDocument("DriversLicense")
+        ]))
+        let unknown = request.requestObject.documents[0].requestedAttributes[0]
+        XCTAssertEqual(unknown.attributeType, "FutureField")
+        XCTAssertEqual(unknown.intentToStore, 0)
+        XCTAssertNil(unknown.ageAtLeastXArgument)
+        XCTAssertEqual(request.requestObject.documents[1].requestedAttributes[0].attributeType, "GivenName")
+    }
+
+    func testMalformedSharedFieldsAndKnownArgumentsRemainDecodingErrors() throws {
+        let invalid: [[String: Any]] = [
+            ["intentToStore": 0],
+            ["attributeType": 123, "intentToStore": 0],
+            ["attributeType": "FutureField"],
+            ["attributeType": "FutureField", "intentToStore": "invalid"],
+            ["attributeType": "GivenName"],
+            ["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": "21"],
+            ["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": 21, "ageOverArgument": 18]
+        ]
+        for attribute in invalid {
+            XCTAssertThrowsError(try NativeWalletRequestParser.parse(walletChallenge(documents: [
+                walletDocument("DriversLicense", attributes: [
+                    ["attributeType": "FutureField", "intentToStore": 0], attribute
+                ]), walletDocument("DriversLicense")
+            ]))) { error in
+                XCTAssertTrue(error is DecodingError, "Unexpected error: \(error)")
+            }
+        }
+    }
+
     func testKnownMalformedDocumentAndAmbiguousFormatsAreRejected() throws {
         XCTAssertThrowsError(try NativeWalletRequestParser.parse(walletChallenge(documents: [
             ["appleDocumentType": "DriversLicense", "requestedAttributes": "invalid"]
