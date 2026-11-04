@@ -127,7 +127,6 @@ final class NativeWalletDescriptorTests: XCTestCase {
 
     func testMalformedKnownRequestsDoNotSilentlyDropFieldsOrDocuments() async throws {
         let invalidAttributes: [[[String: Any]]] = [[],
-            [["attributeType": "Unknown", "intentToStore": 0]],
             [["attributeType": "AgeAtLeastX", "intentToStore": 0]],
             [["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": 126]],
             [["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": 0]],
@@ -147,6 +146,129 @@ final class NativeWalletDescriptorTests: XCTestCase {
             catch { XCTFail("Unexpected error: \(error)") }
             XCTAssertNil(spy.request)
             XCTAssertTrue(spy.checked.isEmpty)
+        }
+    }
+
+    func testUnknownAttributeSkipsWholeAlternativeForAvailabilityAndPresentation() async throws {
+        for unknownFirst in [true, false] {
+            let spy = NativeWalletControllerSpy()
+            var diagnostics: [NativeWalletDiagnostic] = []
+            let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+            let attributes: [[String: Any]] = [
+                ["attributeType": "GivenName", "intentToStore": 0],
+                ["attributeType": "FutureField", "intentToStore": 0,
+                 "ageAtLeastXArgument": ["future": true]]
+            ]
+            let unsupported = walletDocument("DriversLicense", attributes: unknownFirst ? Array(attributes.reversed()) : attributes)
+            let supported = walletDocument("DriversLicense", attributes: [
+                ["attributeType": "AgeAtLeastX", "intentToStore": 30, "ageAtLeastXArgument": 21]
+            ])
+            let request = try walletChallenge(documents: unknownFirst ? [unsupported, supported] : [supported, unsupported])
+            let available = try await client.canRequestDocument(request)
+            XCTAssertTrue(available)
+            let checked = try XCTUnwrap(spy.checked.first as? PKIdentityDriversLicenseDescriptor)
+            XCTAssertEqual(spy.checked.count, 1)
+            XCTAssertEqual(checked.elements.count, 1)
+            XCTAssertNotNil(checked.intentToStore(element: .age(atLeast: 21)))
+
+            await assertWalletCancellation(client, request)
+            let submitted = try XCTUnwrap(spy.request)
+            let descriptor = try XCTUnwrap(submitted.descriptor as? PKIdentityDriversLicenseDescriptor)
+            XCTAssertEqual(descriptor.elements.count, 1)
+            XCTAssertNotNil(descriptor.intentToStore(element: .age(atLeast: 21)))
+            XCTAssertEqual(submitted.nonce, walletNonce)
+            XCTAssertEqual(submitted.merchantIdentifier, "merchant.test")
+            XCTAssertEqual(diagnostics.map(\.code), [.unsupportedAttribute, .unsupportedAttribute])
+            XCTAssertTrue(diagnostics.allSatisfy {
+                $0.level == .warning && $0.documentType == "DriversLicense" && $0.attributeType == "FutureField"
+            })
+        }
+    }
+
+    func testOSUnavailableAndDocumentSpecificAttributesSkipWholeAlternatives() async throws {
+        var cases: [(String, String, Int)] = [("DriversLicense", "Sex", 17), ("DriversLicense", "Height", 18)]
+        if #available(iOS 18.0, *) { cases.append(("NationalIDCard", "DrivingPrivileges", 18)) }
+        for (type, attribute, majorVersion) in cases {
+            let spy = NativeWalletControllerSpy()
+            var diagnostics: [NativeWalletDiagnostic] = []
+            let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+            client.capabilities = .init(version: .init(majorVersion: majorVersion, minorVersion: 0, patchVersion: 0))
+            let request = try walletChallenge(documents: [
+                walletDocument(type, attributes: [
+                    ["attributeType": "GivenName", "intentToStore": 0],
+                    ["attributeType": attribute, "intentToStore": 0]
+                ]), walletDocument("DriversLicense", attributes: [["attributeType": "FamilyName", "intentToStore": 0]])
+            ])
+            let available = try await client.canRequestDocument(request)
+            XCTAssertTrue(available)
+            XCTAssertEqual(spy.checked.count, 1)
+            await assertWalletCancellation(client, request)
+            let descriptor = try XCTUnwrap(spy.request?.descriptor as? PKIdentityDriversLicenseDescriptor)
+            XCTAssertEqual(descriptor.elements.count, 1)
+            XCTAssertNotNil(descriptor.intentToStore(element: .familyName))
+            XCTAssertEqual(diagnostics.map(\.code), [.unsupportedAttribute, .unsupportedAttribute])
+            XCTAssertTrue(diagnostics.allSatisfy { $0.documentType == type && $0.attributeType == attribute })
+        }
+    }
+
+    func testUnsupportedAttributesWithoutCompleteAlternativeFailBeforeWallet() async throws {
+        let attributes: [[String: Any]] = [
+            ["attributeType": "GivenName", "intentToStore": 0],
+            ["attributeType": "FutureField", "intentToStore": 0]
+        ]
+        // Cover the legacy shape, a single alternative, and multiple alternatives.
+        for documents in [nil, [walletDocument("DriversLicense", attributes: attributes)],
+                          [walletDocument("DriversLicense", attributes: attributes), walletDocument("FutureID")]] {
+            for availabilityOnly in [true, false] {
+                let spy = NativeWalletControllerSpy()
+                var diagnostics: [NativeWalletDiagnostic] = []
+                let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+                let request = try walletChallenge(documents: documents,
+                    bodyChanges: documents == nil ? ["requestedAttributes": attributes] : [:])
+                do {
+                    if availabilityOnly { _ = try await client.canRequestDocument(request) }
+                    else { _ = try await client.performMdlExchange(request) }
+                    XCTFail("An incomplete document must never reach Wallet")
+                } catch ExchangeRequestTransformerError.noSupportedDocuments { }
+                catch { XCTFail("Unexpected error: \(error)") }
+                XCTAssertNil(spy.request)
+                XCTAssertTrue(spy.checked.isEmpty)
+                XCTAssertEqual(diagnostics.first?.code, .unsupportedAttribute)
+                XCTAssertEqual(diagnostics.last?.code, .noSupportedDocuments)
+                XCTAssertEqual(diagnostics.last?.level, .error)
+            }
+        }
+    }
+
+    func testUnsupportedAttributesCannotMaskMalformedKnownRequirements() async throws {
+        let invalidAttributes: [[[String: Any]]] = [
+            [["attributeType": "AgeAtLeastX", "intentToStore": 0]],
+            [["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": 126]],
+            [["attributeType": "GivenName", "intentToStore": -2]],
+            [["attributeType": "GivenName", "intentToStore": 0, "ageAtLeastXArgument": 21]],
+            [["attributeType": "Height", "intentToStore": 0, "ageAtLeastXArgument": 21]],
+            [["attributeType": "FutureField", "intentToStore": -2]],
+            [["attributeType": "Age", "intentToStore": 0], ["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": 21]],
+            [["attributeType": "GivenName", "intentToStore": 0], ["attributeType": "GivenName", "intentToStore": -1]]
+        ]
+        for invalid in invalidAttributes {
+            for unknownFirst in [true, false] {
+                let spy = NativeWalletControllerSpy()
+                let client = TrinsicMdl(controller: spy)
+                client.capabilities = .init(version: .init(majorVersion: 18, minorVersion: 0, patchVersion: 0))
+                let unknown: [[String: Any]] = [["attributeType": "AnotherFutureField", "intentToStore": 0]]
+                let request = try walletChallenge(documents: [
+                    walletDocument("DriversLicense", attributes: unknownFirst ? unknown + invalid : invalid + unknown),
+                    walletDocument("DriversLicense")
+                ])
+                do {
+                    _ = try await client.performMdlExchange(request)
+                    XCTFail("An unsupported field must not hide an invalid known field")
+                } catch ExchangeRequestTransformerError.invalidAttribute { }
+                catch { XCTFail("Unexpected error: \(error)") }
+                XCTAssertNil(spy.request)
+                XCTAssertTrue(spy.checked.isEmpty)
+            }
         }
     }
 

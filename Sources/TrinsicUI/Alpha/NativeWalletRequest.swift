@@ -4,26 +4,29 @@ import OSLog
 /// Structural diagnostics only: never contains a nonce, credential, or response token.
 public struct NativeWalletDiagnostic: Equatable, Sendable {
     public enum Code: String, Sendable {
-        case unsupportedDocumentType, documentUnavailableOnOS, selectingSingleDocument, noSupportedDocuments
+        case unsupportedDocumentType, documentUnavailableOnOS, unsupportedAttribute, selectingSingleDocument, noSupportedDocuments
     }
     public enum Level: String, Sendable { case warning, error }
     public let code: Code
     public let level: Level
     public let documentType: String?
+    public let attributeType: String?
 }
 
 internal enum NativeWalletDiagnostics {
     private static let logger = Logger(subsystem: "id.trinsic.TrinsicUI", category: "NativeWallet")
 
     static func emit(_ code: NativeWalletDiagnostic.Code, documentType: String? = nil,
+                     attributeType: String? = nil,
                      to handler: ((NativeWalletDiagnostic) -> Void)?) {
         let diagnostic = NativeWalletDiagnostic(code: code,
-            level: code == .noSupportedDocuments ? .error : .warning, documentType: documentType)
+            level: code == .noSupportedDocuments ? .error : .warning,
+            documentType: documentType, attributeType: attributeType)
         if diagnostic.level == .error {
             logger.error("Native Wallet: \(code.rawValue, privacy: .public)")
         } else {
             // Backend-provided type names remain private in system logs.
-            logger.warning("Native Wallet: \(code.rawValue, privacy: .public); document=\(documentType ?? "", privacy: .private)")
+            logger.warning("Native Wallet: \(code.rawValue, privacy: .public); document=\(documentType ?? "", privacy: .private); attribute=\(attributeType ?? "", privacy: .private)")
         }
         handler?(diagnostic)
     }

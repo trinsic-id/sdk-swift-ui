@@ -26,7 +26,7 @@ For [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-sess
 
 For native Apple Wallet, build with Xcode 26+. `TrinsicMdl` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` (an advisory check) and `performMdlExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
 
-The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Unknown or OS-unavailable document types are skipped; malformed supported requests fail. Use `diagnosticHandler` for warnings and errors. Keep the single-document format for older SDK releases.
+The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet. Use `diagnosticHandler` for warnings and errors. Keep the single-document format for older SDK releases.
 
 Your application/backend owns Session creation, challenge refresh, response submission, and result collection.
 

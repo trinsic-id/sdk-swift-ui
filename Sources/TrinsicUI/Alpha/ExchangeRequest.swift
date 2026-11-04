@@ -138,6 +138,28 @@ internal enum NativeWalletDocumentType: String {
     case nationalIDCard = "NationalIDCard"
 }
 
+internal enum NativeWalletAttributeType: String {
+    case givenName = "GivenName", familyName = "FamilyName", portrait = "Portrait"
+    case address = "Address", dateOfBirth = "DateOfBirth", age = "Age", ageAtLeastX = "AgeAtLeastX"
+    case sex = "Sex", documentNumber = "DocumentNumber", issuingAuthority = "IssuingAuthority"
+    case documentIssueDate = "DocumentIssueDate", documentExpirationDate = "DocumentExpirationDate"
+    case drivingPrivileges = "DrivingPrivileges", documentDHSComplianceStatus = "DocumentDHSComplianceStatus"
+    case height = "Height", weight = "Weight", eyeColor = "EyeColor", hairColor = "HairColor"
+    case organDonorStatus = "OrganDonorStatus", veteranStatus = "VeteranStatus"
+
+    func supports(_ documentType: NativeWalletDocumentType) -> Bool {
+        switch self {
+        case .issuingAuthority, .documentIssueDate, .documentExpirationDate:
+            return documentType != .nationalIDCard
+        case .drivingPrivileges, .documentDHSComplianceStatus, .height, .weight, .eyeColor,
+             .hairColor, .organDonorStatus, .veteranStatus:
+            return documentType == .driversLicense
+        default:
+            return true
+        }
+    }
+}
+
 public struct ExchangeRequestAttribute: Codable {
     public var attributeType: String
     public var intentToStore: Int
@@ -162,6 +184,10 @@ public struct ExchangeRequestAttribute: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         attributeType = try container.decode(String.self, forKey: .attributeType)
         intentToStore = try container.decode(Int.self, forKey: .intentToStore)
+        // Storage intent is shared by every attribute. Only interpret type-specific
+        // arguments for known attributes; the transformer rejects the entire
+        // document alternative when it encounters an unknown attribute.
+        guard NativeWalletAttributeType(rawValue: attributeType) != nil else { return }
         let current = try container.decodeIfPresent(Int.self, forKey: .ageAtLeastXArgument)
         let legacy = try container.decodeIfPresent(Int.self, forKey: .ageOverArgument)
         if let current, let legacy, current != legacy {
@@ -197,7 +223,7 @@ public enum ExchangeRequestTransformerError: Error, LocalizedError {
         case .unsupportedExchangeType(let type): return "Unsupported exchange type: \(type)"
         case .unsupportedPlatform(let platform): return "Unsupported Wallet platform: \(platform)"
         case .unsupportedDocumentType(let type): return "Unsupported document type for this operation: \(type)"
-        case .noSupportedDocuments: return "No requested document type is supported by this SDK and iOS version."
+        case .noSupportedDocuments: return "No complete requested document is supported by this SDK and iOS version."
         case .unsupportedAttribute(let attribute): return "Unsupported identity attribute: \(attribute)"
         case .invalidAttribute(let attribute): return "Invalid identity attribute or argument: \(attribute)"
         case .emptyRequestedAttributes(let type): return "No identity attributes were requested for \(type)."
