@@ -22,11 +22,13 @@ You _must_ specify a `redirectUrl` when creating either kind of Session, and tha
 
 ### Direct Provider Sessions
 
-This library provides **only minimal** support for [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-session).
+For [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-session), the browser API handles `LaunchBrowser` with `CaptureRedirect`.
 
-Specifically, it can be used only to execute Sessions which return a `launchMethod` of `LaunchBrowser` and a `collectionMethod` of `CaptureRedirect`.
+For native Apple Wallet, build with Xcode 26+. `TrinsicMdl` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` (an advisory check) and `performMdlExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
 
-All other interaction methods are not supported by this library and will require additional effort to implement; please contact Trinsic for guidance.
+The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Unknown or OS-unavailable document types are skipped; malformed supported requests fail. Use `diagnosticHandler` for warnings and errors. Keep the single-document format for older SDK releases.
+
+Your application/backend owns Session creation, challenge refresh, response submission, and result collection.
 
 ## Installation
 
