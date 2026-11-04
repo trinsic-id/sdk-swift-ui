@@ -1,67 +1,51 @@
 import AuthenticationServices
 import Foundation
 
-/// The address to capture when a browser session finishes. Full URLs are matched
-/// by scheme, host and path; result query parameters are supplied by Trinsic.
+/// Configures Apple's native callback matching: HTTPS host and decoded path,
+/// or just the scheme for custom-scheme callbacks.
 internal struct SessionCallback {
     let scheme: String
     let host: String?
     let path: String?
-    private let nativePath: String?
 
     init(customScheme: String) throws {
         guard !customScheme.isEmpty else {
             throw TrinsicError.error(with: .emptyCallbacklUrl)
         }
-        guard customScheme.range(of: "^[A-Za-z][A-Za-z0-9+.-]*$", options: .regularExpression) != nil,
+        // Malformed schemes can raise an Objective-C exception in the native session initializer.
+        guard customScheme.range(of: "\\A[A-Za-z][A-Za-z0-9+.-]*\\z", options: .regularExpression) != nil,
               !["http", "https"].contains(customScheme.lowercased()) else {
             throw TrinsicError.error(with: .unparsableCallbackUrl,
-                message: "Supply a custom scheme, or use callbackUrl with a complete HTTPS URL.")
+                message: "Supply only a valid custom scheme, or use callbackUrl with a complete callback URL.")
         }
         scheme = customScheme.lowercased()
         host = nil
         path = nil
-        nativePath = nil
     }
 
     init(url: String) throws {
         guard !url.isEmpty else {
             throw TrinsicError.error(with: .emptyCallbacklUrl)
         }
-        guard url.rangeOfCharacter(from: .whitespacesAndNewlines.union(.controlCharacters)) == nil,
-              let components = URLComponents(string: url),
+        guard let components = URLComponents(string: url),
               let scheme = components.scheme?.lowercased(),
-              scheme != "http",
-              let parsedUrl = components.url,
-              components.user == nil, components.password == nil,
-              components.port == nil, components.query == nil, components.fragment == nil,
-              scheme != "https" || !(parsedUrl.host ?? "").isEmpty,
-              components.percentEncodedPath.isEmpty || components.percentEncodedPath.hasPrefix("/") else {
+              scheme != "http" else {
             throw TrinsicError.error(with: .unparsableCallbackUrl,
-                message: "Use an absolute HTTPS or custom-scheme callback URL without credentials, a port, query or fragment.")
+                message: "Use an absolute HTTPS or custom-scheme callback URL.")
         }
         self.scheme = scheme
-        // URL.host preserves the ASCII (IDNA) form required by Apple's matcher.
-        host = parsedUrl.host?.lowercased()
-        path = scheme == "https" && components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
-        // Apple matches decoded paths; retain the encoded path above for exact result validation.
-        nativePath = scheme == "https" && components.path.isEmpty ? "/" : components.path
-    }
-
-    func matches(_ url: URL) -> Bool {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.scheme?.lowercased() == scheme else { return false }
-        // Preserve the original scheme-only API's matching behavior.
-        guard let path = path else { return true }
-        let actualPath = scheme == "https" && components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath
-        return url.host?.lowercased() == host && actualPath == path
-            && components.user == nil && components.password == nil
-            && components.port == nil && components.fragment == nil
-    }
-
-    func matchesResult(_ url: URL, sessionId: String?) -> Bool {
-        let ids = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.filter { $0.name == "sessionId" } ?? []
-        return matches(url) && sessionId != nil && ids.count == 1 && ids[0].value == sessionId
+        if scheme == "https" {
+            // URL.host preserves the ASCII (IDNA) form required by Apple's matcher.
+            guard let host = components.url?.host, !host.isEmpty else {
+                throw TrinsicError.error(with: .unparsableCallbackUrl,
+                    message: "An HTTPS callback URL must have a host.")
+            }
+            self.host = host.lowercased()
+            path = components.path.isEmpty ? "/" : components.path
+        } else {
+            host = nil
+            path = nil
+        }
     }
 
     @available(iOS 13.0, macOS 14.4, *)
@@ -79,7 +63,7 @@ internal struct SessionCallback {
     @available(iOS 17.4, macOS 14.4, *)
     var nativeCallback: ASWebAuthenticationSession.Callback {
         if scheme == "https" {
-            return .https(host: host!, path: nativePath!)
+            return .https(host: host!, path: path!)
         }
         return .customScheme(scheme)
     }

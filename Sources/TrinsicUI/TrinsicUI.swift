@@ -27,7 +27,14 @@ import AppKit
         super.init()
     }
 
-
+    /// Launch a session using a custom-scheme callback.
+    /// - Parameters:
+    ///   - launchUrl: The URL to open. Must contain exactly one nonempty `sessionId` query parameter.
+    ///     Wrappers must preserve this parameter on the URL passed to the SDK; its decoded value
+    ///     must match the `sessionId` returned in the callback URL.
+    ///   - callbackUrlScheme: The custom callback scheme, without a host or path.
+    /// - Returns: The result with the validated session ID, or a canceled result on local cancellation.
+    /// - Throws: An error if the launch or returned callback URL has a missing, empty or duplicate session ID, or the IDs differ.
     @objc public func launchSession(launchUrl: String, callbackUrlScheme: String) async throws -> LaunchSessionResult {
         return try await launchSession(launchUrl: launchUrl, callback: SessionCallback(customScheme: callbackUrlScheme))
     }
@@ -35,7 +42,14 @@ import AppKit
     /// Launch a session using the same complete callback URL supplied as `redirectUrl`
     /// when creating the session. HTTPS callbacks require iOS 17.4+ / macOS 14.4+
     /// and a `webcredentials` associated domain. Custom-scheme URLs are also supported.
-    /// The callback URL must not contain a query, fragment, credentials or port.
+    /// Apple matches HTTPS callbacks by host and decoded path, and custom callbacks by scheme.
+    /// - Parameters:
+    ///   - launchUrl: The URL to open. Must contain exactly one nonempty `sessionId` query parameter.
+    ///     Wrappers must preserve this parameter on the URL passed to the SDK; its decoded value
+    ///     must match the `sessionId` returned in the callback URL.
+    ///   - callbackUrl: The callback URL supplied as `redirectUrl` when creating the session.
+    /// - Returns: The result with the validated session ID, or a canceled result on local cancellation.
+    /// - Throws: An error if the launch or returned callback URL has a missing, empty or duplicate session ID, or the IDs differ.
     @objc public func launchSession(launchUrl: String, callbackUrl: String) async throws -> LaunchSessionResult {
         return try await launchSession(launchUrl: launchUrl, callback: SessionCallback(url: callbackUrl))
     }
@@ -48,9 +62,7 @@ import AppKit
                 var completionHandler: ((URL?, Error?) -> Void)?
                 var sessionToKeepAlive: Any? // if we do not keep the session alive, it will get closed immediately while showing the dialog
                 do {
-                    let formattedLaunchUrl = try self.validateAndFormatLaunchUrl(launchUrl: launchUrl)
-                    let expectedSessionId = URLComponents(url: formattedLaunchUrl, resolvingAgainstBaseURL: false)?
-                        .queryItems?.first(where: { $0.name == "sessionId" })?.value
+                    let (parsedLaunchUrl, expectedSessionId) = try self.parseLaunchUrl(launchUrl: launchUrl)
 
                     completionHandler = { [weak self] (url: URL?, err: Error?) in
                         completionHandler = nil
@@ -68,7 +80,7 @@ import AppKit
 
                         if let err = err {
                             if case ASWebAuthenticationSessionError.canceledLogin = err {
-                                continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, redirectToken: nil, resultsAccessKey: nil))
+                                continuation.resume(returning: LaunchSessionResult(canceled: true, sessionId: nil, redirectToken: nil, callbackUrl: nil))
                                 return;
                             }
                             else {
@@ -81,28 +93,14 @@ import AppKit
                             continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "We did not receive a url from the native completion handler"))
                             return
                         }
-                        guard callback.matchesResult(url, sessionId: expectedSessionId) else {
-                            continuation.resume(throwing: TrinsicError.error(with: .unparsableResultUrl,
-                                message: "The result URL does not match the requested callback URL and session ID."))
-                            return
-                        }
-                        guard let self = self else {
-                            continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "TrinsicUI was deallocated before the session result could be parsed"))
-                            return
-                        }
-                        let (result, parseError) = self.parseUrl(url: url)
-                        if let parseError = parseError {
-                            continuation.resume(throwing: parseError)
-                        }
-                        else if let result = result {
-                            continuation.resume(returning: result)
-                        }
-                        else {
-                            continuation.resume(throwing: TrinsicError.error(with: .unknownError, message: "An unknown error occured, we should never hit this code-branch"))
+                        do {
+                            continuation.resume(returning: try Self.parseUrl(url: url, expectedSessionId: expectedSessionId))
+                        } catch {
+                            continuation.resume(throwing: error)
                         }
                     }
 
-                    let session = try self.makeAuthenticationSession(formattedLaunchUrl, callback, completionHandler!)
+                    let session = try self.makeAuthenticationSession(parsedLaunchUrl, callback, completionHandler!)
                     sessionToKeepAlive = session
 
                     // cancel() dismisses the system UI AND resumes the continuation directly — the native completion handler is not reliably invoked on programmatic .cancel().
@@ -112,7 +110,7 @@ import AppKit
                         session.cancel()
                         sessionToKeepAlive = nil
                         completionHandler = nil
-                        continuation.resume(returning: LaunchSessionResult.init(success: false, canceled: true, sessionId: nil, redirectToken: nil, resultsAccessKey: nil))
+                        continuation.resume(returning: LaunchSessionResult(canceled: true, sessionId: nil, redirectToken: nil, callbackUrl: nil))
                     }
 
                     session.presentationContextProvider = self.presentationContextProvider;
@@ -136,78 +134,49 @@ import AppKit
         cancelHandler?()
     }
 
-    private func parseUrl(url: URL) -> (result: LaunchSessionResult?, parseError: Error?) {
-        // Parse launchUrl into a URLComponents object
-        guard let urlComponents = URLComponents(string: url.absoluteString) else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot make URLComponents from result url"))
+    private static func parseUrl(url: URL, expectedSessionId: String) throws -> LaunchSessionResult {
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let sessionIds = queryItems.filter { $0.name == "sessionId" }
+        guard sessionIds.count == 1,
+              let sessionId = sessionIds[0].value,
+              sessionId == expectedSessionId else {
+            throw TrinsicError.error(with: .unparsableResultUrl,
+                message: "The result URL must contain exactly one sessionId matching the launch URL.")
         }
-        
-        let queryItems = urlComponents.queryItems ?? []
 
-        let success: Bool
-        if let successQueryItem = queryItems.first(where: { $0.name == "success" }) {
-            guard let successString = successQueryItem.value,
-                !successString.isEmpty,
-                let parsedSuccess = Bool(successString) else {
-                return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot parse success in result url"))
-            }
-            success = parsedSuccess
-        } else {
-            // `success` is deprecated and will not be present in the future
-            success = true
+        func value(for name: String) -> String? {
+            guard let value = queryItems.first(where: { $0.name == name })?.value,
+                  !value.isEmpty else { return nil }
+            return value
         }
-        
-        let canceledString = queryItems.first(where: { $0.name == "canceled" })?.value
-        let canceled = (canceledString != nil && !canceledString!.isEmpty && Bool(canceledString!) == true)
-        
-        guard let sessionId = queryItems.first(where: { $0.name == "sessionId" })?.value,
-            !sessionId.isEmpty else {
-            return (result: nil, parseError: TrinsicError.error(with: .unparsableResultUrl, message: "Cannot find sessionId in result url"))
-        }
-        
-        let redirectToken = queryItems.first(where: { $0.name == "redirectToken" })?.value
-        let resultsAccessKey = queryItems.first(where: { $0.name == "resultsAccessKey" })?.value
-        let result = LaunchSessionResult.init(success: success, canceled: canceled, sessionId: sessionId, redirectToken: redirectToken, resultsAccessKey: resultsAccessKey)
-        return (result: result, parseError: nil)
+
+        return LaunchSessionResult(
+            canceled: Bool(value(for: "canceled") ?? "") ?? false,
+            sessionId: sessionId,
+            redirectToken: value(for: "redirectToken"),
+            callbackUrl: url.absoluteString
+        )
     }
     
-    private func validateAndFormatLaunchUrl(launchUrl: String) throws -> URL {
+    private func parseLaunchUrl(launchUrl: String) throws -> (url: URL, sessionId: String) {
         guard !launchUrl.isEmpty else {
             throw TrinsicError.error(with: .emptyLaunchUrl, message: "launchURL is empty")
         }
         
-        // Parse launchUrl into a URL object
-        guard URL(string: launchUrl) != nil else {
+        guard let url = URL(string: launchUrl) else {
             throw TrinsicError.error(with: .unparsableLaunchUrl, message: "Cannot make URL from launchUrl")
         }
-          
-        // Parse launchUrl into a URLComponents object
-        guard var urlComponents = URLComponents(string: launchUrl) else {
-            throw TrinsicError.error(with: .unparsableLaunchUrl, message: "Cannot make URLComponents from launchUrl")
-        }
-          
-        var queryItems = urlComponents.queryItems ?? []
 
-        guard let sessionId = queryItems.first(where: { $0.name == "sessionId" })?.value,
-            !sessionId.isEmpty else {
-            throw TrinsicError.error(with: .missingSessionId, message: "Can't find session id on launchUrl")
+        let sessionIds = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .filter { $0.name == "sessionId" } ?? []
+        guard sessionIds.count == 1,
+              let sessionId = sessionIds[0].value,
+              !sessionId.isEmpty else {
+            throw TrinsicError.error(with: .missingSessionId,
+                message: "launchUrl must contain exactly one nonempty sessionId query parameter.")
         }
 
-        // Launchmode affects some validation checks on our backend to ensure a session for a platform has all the required parameters
-        if queryItems.first(where: { $0.name == "launchMode" }) == nil {
-          queryItems.append(URLQueryItem(name: "launchMode", value: "mobile"))
-        }
-    
-
-        // Update the URL components with the new query items
-        urlComponents.queryItems = queryItems
-
-        // Reconstruct the updated URL which includes the launch mode and redirect url.
-        guard let updatedUrl = urlComponents.url else {
-            throw TrinsicError.error(with: .cannotReconstructLaunchUrl, message: "Cannot get url from reconstructed launchUrl")
-        }
-        
-        return updatedUrl
+        return (url, sessionId)
     }
 }
 
