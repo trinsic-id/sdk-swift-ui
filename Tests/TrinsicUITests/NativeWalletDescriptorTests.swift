@@ -8,9 +8,12 @@ final class NativeWalletDescriptorTests: XCTestCase {
     func testSharedBackendChallengesReachPassKitWithExpectedDocumentsAndFields() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Photo ID and composite descriptors require iOS 26") }
         for fixture in try NativeWalletContract.load() {
+            let challenge = try walletVersionedChallenge(fixture.challenge)
             let spy = NativeWalletControllerSpy()
             let client = TrinsicMdl(controller: spy)
-            await assertWalletCancellation(client, fixture.challenge)
+            let available = try await client.canRequestDocument(challenge)
+            XCTAssertTrue(available, fixture.name)
+            await assertWalletCancellation(client, challenge)
             let request = try XCTUnwrap(spy.request)
             XCTAssertEqual(request.merchantIdentifier, fixture.expected.merchantId, fixture.name)
             XCTAssertEqual(request.nonce, Data(fixture.expected.nonce), fixture.name)
@@ -29,6 +32,27 @@ final class NativeWalletDescriptorTests: XCTestCase {
                     XCTAssertTrue(descriptor is PKIdentityDriversLicenseDescriptor, fixture.name)
                 }
                 assertElements(descriptor, [.givenName, .familyName, .dateOfBirth, .age(atLeast: 21)], fixture.name)
+            }
+        }
+    }
+
+    func testUnsupportedOrMalformedVersionFailsBeforeAvailabilityAndPresentation() async throws {
+        for fixture in try NativeChallengeFixture.load()
+            where fixture.supportedVersions == ["v1"]
+                && (fixture.expectedError != nil || fixture.selectedVersion == "legacy") {
+            for availabilityOnly in [true, false] {
+                let spy = NativeWalletControllerSpy()
+                let client = TrinsicMdl(controller: spy)
+                do {
+                    if availabilityOnly {
+                        _ = try await client.canRequestDocument(fixture.challenge)
+                    } else {
+                        _ = try await client.performMdlExchange(fixture.challenge)
+                    }
+                    XCTFail("Expected invalid challenge to fail: \(fixture.name)")
+                } catch { }
+                XCTAssertTrue(spy.checked.isEmpty, fixture.name)
+                XCTAssertNil(spy.request, fixture.name)
             }
         }
     }

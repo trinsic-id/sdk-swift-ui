@@ -54,7 +54,8 @@ internal enum NativeWalletBase64 {
 
 internal enum NativeWalletRequestParser {
     static func parse(_ encoded: String) throws -> ParsedExchangeRequest {
-        let outer = try JSONDecoder().decode(ExchangeRequest.self, from: NativeWalletBase64.decode(encoded))
+        let outer = try JSONDecoder().decode(NativeWalletChallenge.self,
+            from: NativeWalletBase64.decode(encoded)).request
         guard outer.type == "mdlRequest" else {
             throw ExchangeRequestTransformerError.unsupportedExchangeType(outer.type)
         }
@@ -73,5 +74,21 @@ internal enum NativeWalletRequestParser {
         _ = try NativeWalletBase64.decode(body.nonce)
         return ParsedExchangeRequest(exchangeId: outer.exchangeId, type: outer.type, platform: outer.platform,
             exchangeMechanism: outer.exchangeMechanism, requestObject: body)
+    }
+}
+
+/// Select a complete request before decoding its schema or transaction binding.
+private struct NativeWalletChallenge: Decodable {
+    let request: ExchangeRequest
+
+    private enum CodingKeys: String, CodingKey { case v1 }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // v1 is required. Other versions and unversioned sibling fields are ignored.
+        guard container.contains(.v1) else {
+            throw ExchangeRequestTransformerError.unsupportedChallengeVersion
+        }
+        request = try container.decode(ExchangeRequest.self, forKey: .v1)
     }
 }
