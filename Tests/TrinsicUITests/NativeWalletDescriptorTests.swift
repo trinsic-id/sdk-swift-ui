@@ -5,6 +5,34 @@ import XCTest
 
 @MainActor
 final class NativeWalletDescriptorTests: XCTestCase {
+    func testSharedBackendChallengesReachPassKitWithExpectedDocumentsAndFields() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Photo ID and composite descriptors require iOS 26") }
+        for fixture in try NativeWalletContract.load() {
+            let spy = NativeWalletControllerSpy()
+            let client = TrinsicMdl(controller: spy)
+            await assertWalletCancellation(client, fixture.challenge)
+            let request = try XCTUnwrap(spy.request)
+            XCTAssertEqual(request.merchantIdentifier, fixture.expected.merchantId, fixture.name)
+            XCTAssertEqual(request.nonce, Data(fixture.expected.nonce), fixture.name)
+            let submitted = try XCTUnwrap(request.descriptor)
+            let descriptors: [any PKIdentityDocumentDescriptor]
+            if fixture.expected.documents.count > 1 {
+                descriptors = try XCTUnwrap(submitted as? PKIdentityAnyOfDescriptor).descriptors
+            } else {
+                descriptors = [submitted]
+            }
+            XCTAssertEqual(descriptors.count, fixture.expected.documents.count, fixture.name)
+            for (descriptor, expected) in zip(descriptors, fixture.expected.documents) {
+                if expected.appleDocumentType == "PhotoID" {
+                    XCTAssertTrue(descriptor is PKIdentityPhotoIDDescriptor, fixture.name)
+                } else {
+                    XCTAssertTrue(descriptor is PKIdentityDriversLicenseDescriptor, fixture.name)
+                }
+                assertElements(descriptor, [.givenName, .familyName, .dateOfBirth, .age(atLeast: 21)], fixture.name)
+            }
+        }
+    }
+
     func testLegacyLicenseRequestPreservesFieldsAndTransactionAtPassKitBoundary() async throws {
         let spy = NativeWalletControllerSpy()
         let client = TrinsicMdl(controller: spy)
@@ -279,23 +307,56 @@ final class NativeWalletDescriptorTests: XCTestCase {
     }
 
     func testAttributeMappingsForEachDocumentType() throws {
-        var common = ["GivenName", "FamilyName", "Portrait", "Address", "DateOfBirth", "Age", "DocumentNumber"]
-        if #available(iOS 17.2, *) { common.append("Sex") }
-        let issued = ["IssuingAuthority", "DocumentIssueDate", "DocumentExpirationDate"]
-        var license = common + issued + ["DrivingPrivileges"]
-        if #available(iOS 17.2, *) { license.append("DocumentDHSComplianceStatus") }
+        var common: [(String, PKIdentityElement)] = [
+            ("GivenName", .givenName), ("FamilyName", .familyName), ("Portrait", .portrait),
+            ("Address", .address), ("DateOfBirth", .dateOfBirth), ("Age", .age),
+            ("DocumentNumber", .documentNumber)
+        ]
+        if #available(iOS 17.2, *) { common.append(("Sex", .sex)) }
+        let issued: [(String, PKIdentityElement)] = [
+            ("IssuingAuthority", .issuingAuthority), ("DocumentIssueDate", .documentIssueDate),
+            ("DocumentExpirationDate", .documentExpirationDate)
+        ]
+        var license = common + issued + [("DrivingPrivileges", PKIdentityElement.drivingPrivileges)]
+        if #available(iOS 17.2, *) { license.append(("DocumentDHSComplianceStatus", .documentDHSComplianceStatus)) }
         if #available(iOS 26.0, *) {
-            license += ["Height", "Weight", "EyeColor", "HairColor", "OrganDonorStatus", "VeteranStatus"]
+            license += [("Height", .height), ("Weight", .weight), ("EyeColor", .eyeColor),
+                        ("HairColor", .hairColor), ("OrganDonorStatus", .organDonorStatus), ("VeteranStatus", .veteranStatus)]
         }
-        var cases: [(String, [String], String?)] = [("DriversLicense", license, nil)]
+        var cases: [(String, [(String, PKIdentityElement)], String?)] = [("DriversLicense", license, nil)]
         if #available(iOS 18.0, *) { cases.append(("NationalIDCard", common, "JP")) }
         if #available(iOS 26.0, *) { cases.append(("PhotoID", common + issued, nil)) }
         for (type, fields, region) in cases {
-            let attributes = fields.map { ["attributeType": $0, "intentToStore": 0] as [String: Any] }
-            let request = try NativeWalletRequestParser.parse(walletChallenge(documents: [walletDocument(type, region: region, attributes: attributes)]))
-            let descriptors = try request.toDocumentDescriptors()
-            XCTAssertEqual(descriptors.count, 1)
-            XCTAssertEqual(descriptors[0].elements.count, fields.count, type)
+            // Check each mapping independently: swapping two elements must fail even
+            // when a request containing every supported element would have the same set.
+            for (field, expected) in fields {
+                let request = try NativeWalletRequestParser.parse(walletChallenge(documents: [
+                    walletDocument(type, region: region, attributes: [["attributeType": field, "intentToStore": 0]])
+                ]))
+                let descriptors = try request.toDocumentDescriptors()
+                XCTAssertEqual(descriptors.count, 1)
+                let descriptor = try XCTUnwrap(descriptors.first)
+                assertElements(descriptor, [expected], "\(type).\(field)")
+            }
+        }
+    }
+
+    func testAgeThresholdMapsToExactPassKitElementForEveryDocumentType() throws {
+        var cases: [(String, String?)] = [("DriversLicense", nil)]
+        if #available(iOS 18.0, *) { cases.append(("NationalIDCard", "JP")) }
+        if #available(iOS 26.0, *) { cases.append(("PhotoID", nil)) }
+        for (type, region) in cases {
+            for age in [1, 18, 21, 125] {
+                let request = try NativeWalletRequestParser.parse(walletChallenge(documents: [
+                    walletDocument(type, region: region, attributes: [
+                        ["attributeType": "AgeAtLeastX", "intentToStore": 0, "ageAtLeastXArgument": age]
+                    ])
+                ]))
+                let descriptor = try XCTUnwrap(request.toDocumentDescriptors().first)
+                assertElements(descriptor, [.age(atLeast: age)], "\(type), age \(age)")
+                XCTAssertNotEqual(descriptor.elements.first?.description, PKIdentityElement.age.description)
+                XCTAssertNotEqual(descriptor.elements.first?.description, PKIdentityElement.age(atLeast: age == 21 ? 18 : 21).description)
+            }
         }
     }
 
@@ -391,6 +452,15 @@ final class NativeWalletDescriptorTests: XCTestCase {
         catch { XCTFail("Unexpected error: \(error)") }
         XCTAssertEqual(spy.checked.count, 1)
         XCTAssertNil(spy.request)
+    }
+
+    private func assertElements(_ descriptor: any PKIdentityDocumentDescriptor, _ expected: [PKIdentityElement],
+                                _ message: String, file: StaticString = #filePath, line: UInt = #line) {
+        // PassKit exposes no element identifier/value equality. Compare its public
+        // descriptions with fresh native elements on the same OS, including age values.
+        // intentToStore is insufficient: it returns a default even for absent elements.
+        XCTAssertEqual(descriptor.elements.map(\.description).sorted(), expected.map(\.description).sorted(),
+                       message, file: file, line: line)
     }
 
     private func assertWalletCancellation(_ client: TrinsicMdl, _ request: String) async {
