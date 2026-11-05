@@ -6,7 +6,7 @@ final class NativeWalletContractTests: XCTestCase {
         let fixtures = try NativeWalletContract.load()
         XCTAssertEqual(fixtures.map(\.name), ["mdl", "photo-id", "photo-id-or-mdl"])
         for fixture in fixtures {
-            let request = try NativeWalletRequestParser.parse(fixture.challenge)
+            let request = try NativeWalletRequestParser.parse(walletVersionedChallenge(fixture.challenge))
             let expected = fixture.expected
             XCTAssertEqual(request.exchangeId, expected.exchangeId, fixture.name)
             XCTAssertEqual(request.type, "mdlRequest", fixture.name)

@@ -162,7 +162,7 @@ func walletDocument(_ type: String, region: String? = nil, attributes: [[String:
 }
 
 func walletChallenge(documents: [[String: Any]]? = nil, bodyChanges: [String: Any] = [:],
-                     envelopeChanges: [String: String] = [:]) throws -> String {
+                     envelopeChanges: [String: String] = [:], versioned: Bool = true) throws -> String {
     var body: [String: Any] = ["nonce": walletNonce.base64EncodedString(), "merchantId": "merchant.test", "teamId": "TEAM123"]
     if let documents { body["documentRequests"] = documents }
     else { body.merge(walletDocument("DriversLicense")) { _, value in value } }
@@ -170,6 +170,7 @@ func walletChallenge(documents: [[String: Any]]? = nil, bodyChanges: [String: An
     var envelope = ["type": "mdlRequest", "platform": "apple-wallet", "exchangeMechanism": "NativeApp",
         "exchangeId": "test-exchange", "requestObject": String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)]
     envelope.merge(envelopeChanges) { _, value in value }
-    return try JSONSerialization.data(withJSONObject: envelope).base64EncodedString()
+    let challenge: [String: Any] = versioned ? ["v1": envelope] : envelope
+    return try JSONSerialization.data(withJSONObject: challenge).base64EncodedString()
         .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
 }

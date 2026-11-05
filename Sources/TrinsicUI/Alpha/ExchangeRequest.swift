@@ -206,6 +206,7 @@ public struct ExchangeRequestAttribute: Codable {
 }
 
 public enum ExchangeRequestTransformerError: Error, LocalizedError {
+    case unsupportedChallengeVersion
     case unsupportedExchangeType(String)
     case unsupportedPlatform(String)
     case unsupportedDocumentType(String)
@@ -220,6 +221,7 @@ public enum ExchangeRequestTransformerError: Error, LocalizedError {
 
     public var localizedDescription: String {
         switch self {
+        case .unsupportedChallengeVersion: return "No native Wallet challenge version is supported by this SDK."
         case .unsupportedExchangeType(let type): return "Unsupported exchange type: \(type)"
         case .unsupportedPlatform(let platform): return "Unsupported Wallet platform: \(platform)"
         case .unsupportedDocumentType(let type): return "Unsupported document type for this operation: \(type)"

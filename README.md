@@ -30,7 +30,9 @@ A false availability result must stop presentation: Apple may terminate the app 
 
 The legacy `deviceDoesNotSupportMdl` case remains deprecated for existing references; this path no longer throws it. Update exhaustive switches over `TrinsicMdlError` to handle `documentRequestUnavailable` when upgrading.
 
-The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet. Use `diagnosticHandler` for warnings and errors. Keep the single-document format for older SDK releases.
+Native challenges must contain a `v1` property with a complete exchange request. The SDK ignores other versions and unversioned sibling fields. A challenge without `v1`, including a legacy unversioned challenge, throws `ExchangeRequestTransformerError.unsupportedChallengeVersion`. A malformed `v1` fails validation.
+
+The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Other extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet. Use `diagnosticHandler` for warnings and errors.
 
 Your application/backend owns Session creation, challenge refresh, response submission, and result collection.
 
