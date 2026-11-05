@@ -18,6 +18,7 @@ let package = Package(
             dependencies: []),
         .testTarget(
             name: "TrinsicUITests",
-            dependencies: ["TrinsicUI"]),
+            dependencies: ["TrinsicUI"],
+            resources: [.copy("Fixtures")]),
     ]
 )
