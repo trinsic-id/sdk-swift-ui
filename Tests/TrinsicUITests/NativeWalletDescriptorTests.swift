@@ -10,7 +10,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
         for fixture in try NativeWalletContract.load() {
             let challenge = try walletVersionedChallenge(fixture.challenge)
             let spy = NativeWalletControllerSpy()
-            let client = TrinsicMdl(controller: spy)
+            let client = TrinsicWallet(controller: spy)
             let available = try await client.canRequestDocument(challenge)
             XCTAssertTrue(available, fixture.name)
             await assertWalletCancellation(client, challenge)
@@ -42,12 +42,12 @@ final class NativeWalletDescriptorTests: XCTestCase {
                 && (fixture.expectedError != nil || fixture.selectedVersion == "legacy") {
             for availabilityOnly in [true, false] {
                 let spy = NativeWalletControllerSpy()
-                let client = TrinsicMdl(controller: spy)
+                let client = TrinsicWallet(controller: spy)
                 do {
                     if availabilityOnly {
                         _ = try await client.canRequestDocument(fixture.challenge)
                     } else {
-                        _ = try await client.performMdlExchange(fixture.challenge)
+                        _ = try await client.performExchange(fixture.challenge)
                     }
                     XCTFail("Expected invalid challenge to fail: \(fixture.name)")
                 } catch { }
@@ -59,7 +59,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
 
     func testLegacyLicenseRequestPreservesFieldsAndTransactionAtPassKitBoundary() async throws {
         let spy = NativeWalletControllerSpy()
-        let client = TrinsicMdl(controller: spy)
+        let client = TrinsicWallet(controller: spy)
         let request = try walletChallenge(bodyChanges: ["requestedAttributes": [
             ["attributeType": "GivenName", "intentToStore": 0],
             ["attributeType": "FamilyName", "intentToStore": -1],
@@ -84,7 +84,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
     func testPhotoIDUsesItsOwnDescriptorForAvailabilityAndPresentation() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Photo ID requires iOS 26") }
         let spy = NativeWalletControllerSpy()
-        let client = TrinsicMdl(controller: spy)
+        let client = TrinsicWallet(controller: spy)
         let request = try walletChallenge(bodyChanges: ["appleDocumentType": "PhotoID"])
         let available = try await client.canRequestDocument(request)
         XCTAssertTrue(available)
@@ -96,7 +96,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
     func testJapanNationalIDPreservesRegionAndFields() async throws {
         guard #available(iOS 18.0, *) else { throw XCTSkip("National ID requires iOS 18") }
         let spy = NativeWalletControllerSpy()
-        let client = TrinsicMdl(controller: spy)
+        let client = TrinsicWallet(controller: spy)
         let request = try walletChallenge(documents: [walletDocument("NationalIDCard", region: "JP", attributes: [
             ["attributeType": "GivenName", "intentToStore": 0], ["attributeType": "DateOfBirth", "intentToStore": 0],
             ["attributeType": "Sex", "intentToStore": 0]
@@ -115,7 +115,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Composite descriptors require iOS 26") }
         let spy = NativeWalletControllerSpy()
         var diagnostics: [NativeWalletDiagnostic] = []
-        let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+        let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
         let request = try walletChallenge(documents: [
             ["appleDocumentType": "FutureID", "requestedAttributes": "future-schema"],
             walletDocument("DriversLicense"), walletDocument("PhotoID"), walletDocument("NationalIDCard", region: "JP")
@@ -136,7 +136,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
     func testOldOSFiltersNewTypesAndStillPresentsLicense() async throws {
         let spy = NativeWalletControllerSpy()
         var diagnostics: [NativeWalletDiagnostic] = []
-        let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+        let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
         client.capabilities = .init(version: .init(majorVersion: 17, minorVersion: 0, patchVersion: 0))
         let request = try walletChallenge(documents: [walletDocument("PhotoID"), walletDocument("NationalIDCard", region: "JP"), walletDocument("DriversLicense")])
         await assertWalletCancellation(client, request)
@@ -149,24 +149,24 @@ final class NativeWalletDescriptorTests: XCTestCase {
         let spy = NativeWalletControllerSpy()
         spy.availability = { $0 is PKIdentityNationalIDCardDescriptor }
         var diagnostics: [NativeWalletDiagnostic] = []
-        let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+        let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
         client.capabilities = .init(version: .init(majorVersion: 18, minorVersion: 5, patchVersion: 0))
         let request = try walletChallenge(documents: [walletDocument("DriversLicense"), walletDocument("NationalIDCard", region: "JP")])
         let available = try await client.canRequestDocument(request)
         XCTAssertTrue(available)
         await assertWalletCancellation(client, request)
         XCTAssertTrue(spy.request?.descriptor is PKIdentityNationalIDCardDescriptor)
-        XCTAssertEqual(diagnostics.map(\.code), [.selectingSingleDocument])
+        XCTAssertEqual(diagnostics.map(\.code), [.selectingSingleDocument, .selectingSingleDocument])
     }
 
     func testAllUnsupportedOrEmptyListsFailBeforeInvokingWallet() async throws {
         for documents in [[], [walletDocument("FutureID")], [walletDocument("PhotoID")]] {
             let spy = NativeWalletControllerSpy()
             var diagnostics: [NativeWalletDiagnostic] = []
-            let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+            let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
             client.capabilities = .init(version: .init(majorVersion: 17, minorVersion: 0, patchVersion: 0))
             do {
-                _ = try await client.performMdlExchange(walletChallenge(documents: documents))
+                _ = try await client.performExchange(walletChallenge(documents: documents))
                 XCTFail("No supported document must fail")
             } catch ExchangeRequestTransformerError.noSupportedDocuments { }
             catch { XCTFail("Unexpected error: \(error)") }
@@ -189,9 +189,9 @@ final class NativeWalletDescriptorTests: XCTestCase {
         ]
         for attributes in invalidAttributes {
             let spy = NativeWalletControllerSpy()
-            let client = TrinsicMdl(controller: spy)
+            let client = TrinsicWallet(controller: spy)
             do {
-                _ = try await client.performMdlExchange(walletChallenge(documents: [
+                _ = try await client.performExchange(walletChallenge(documents: [
                     walletDocument("DriversLicense", attributes: attributes), walletDocument("DriversLicense")]))
                 XCTFail("Malformed known request must fail")
             } catch is ExchangeRequestTransformerError { }
@@ -205,7 +205,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
         for unknownFirst in [true, false] {
             let spy = NativeWalletControllerSpy()
             var diagnostics: [NativeWalletDiagnostic] = []
-            let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+            let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
             let attributes: [[String: Any]] = [
                 ["attributeType": "GivenName", "intentToStore": 0],
                 ["attributeType": "FutureField", "intentToStore": 0,
@@ -243,7 +243,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
         for (type, attribute, majorVersion) in cases {
             let spy = NativeWalletControllerSpy()
             var diagnostics: [NativeWalletDiagnostic] = []
-            let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+            let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
             client.capabilities = .init(version: .init(majorVersion: majorVersion, minorVersion: 0, patchVersion: 0))
             let request = try walletChallenge(documents: [
                 walletDocument(type, attributes: [
@@ -274,12 +274,12 @@ final class NativeWalletDescriptorTests: XCTestCase {
             for availabilityOnly in [true, false] {
                 let spy = NativeWalletControllerSpy()
                 var diagnostics: [NativeWalletDiagnostic] = []
-                let client = TrinsicMdl(controller: spy) { diagnostics.append($0) }
+                let client = TrinsicWallet(controller: spy) { if $0.level != .info { diagnostics.append($0) } }
                 let request = try walletChallenge(documents: documents,
                     bodyChanges: documents == nil ? ["requestedAttributes": attributes] : [:])
                 do {
                     if availabilityOnly { _ = try await client.canRequestDocument(request) }
-                    else { _ = try await client.performMdlExchange(request) }
+                    else { _ = try await client.performExchange(request) }
                     XCTFail("An incomplete document must never reach Wallet")
                 } catch ExchangeRequestTransformerError.noSupportedDocuments { }
                 catch { XCTFail("Unexpected error: \(error)") }
@@ -306,7 +306,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
         for invalid in invalidAttributes {
             for unknownFirst in [true, false] {
                 let spy = NativeWalletControllerSpy()
-                let client = TrinsicMdl(controller: spy)
+                let client = TrinsicWallet(controller: spy)
                 client.capabilities = .init(version: .init(majorVersion: 18, minorVersion: 0, patchVersion: 0))
                 let unknown: [[String: Any]] = [["attributeType": "AnotherFutureField", "intentToStore": 0]]
                 let request = try walletChallenge(documents: [
@@ -314,7 +314,7 @@ final class NativeWalletDescriptorTests: XCTestCase {
                     walletDocument("DriversLicense")
                 ])
                 do {
-                    _ = try await client.performMdlExchange(request)
+                    _ = try await client.performExchange(request)
                     XCTFail("An unsupported field must not hide an invalid known field")
                 } catch ExchangeRequestTransformerError.invalidAttribute { }
                 catch { XCTFail("Unexpected error: \(error)") }
@@ -418,13 +418,13 @@ final class NativeWalletDescriptorTests: XCTestCase {
             for request in requests {
                 let spy = NativeWalletControllerSpy()
                 spy.availability = { _ in false }
-                let client = TrinsicMdl(controller: spy)
+                let client = TrinsicWallet(controller: spy)
                 if legacy { client.capabilities = .init(version: .init(majorVersion: 17, minorVersion: 0, patchVersion: 0)) }
                 // Call perform directly: callers must not need their own preflight to avoid a fatal OS assertion.
                 do {
-                    _ = try await client.performMdlExchange(request)
+                    _ = try await client.performExchange(request)
                     XCTFail("A denied preflight must fail before requestDocument")
-                } catch TrinsicMdlError.documentRequestUnavailable { }
+                } catch TrinsicWalletError.documentRequestUnavailable { }
                 catch { XCTFail("Unexpected error: \(error)") }
                 XCTAssertFalse(spy.checked.isEmpty)
                 XCTAssertNil(spy.request)
@@ -434,11 +434,11 @@ final class NativeWalletDescriptorTests: XCTestCase {
 
     func testCancellationBeforePresentationDoesNotInvokeController() async throws {
         let spy = NativeWalletControllerSpy()
-        let client = TrinsicMdl(controller: spy)
+        let client = TrinsicWallet(controller: spy)
         let request = try walletChallenge()
         let task = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            return try await client.performMdlExchange(request)
+            return try await client.performExchange(request)
         }
         do { _ = try await task.value; XCTFail("Expected cancellation") }
         catch is CancellationError { }
@@ -450,14 +450,14 @@ final class NativeWalletDescriptorTests: XCTestCase {
         let spy = NativeWalletControllerSpy()
         var checks = 0
         spy.availability = { _ in checks += 1; return checks == 1 }
-        let client = TrinsicMdl(controller: spy)
+        let client = TrinsicWallet(controller: spy)
         let request = try walletChallenge()
         let available = try await client.canRequestDocument(request)
         XCTAssertTrue(available)
         do {
-            _ = try await client.performMdlExchange(request)
+            _ = try await client.performExchange(request)
             XCTFail("An earlier successful probe must not bypass the current denial")
-        } catch TrinsicMdlError.documentRequestUnavailable { }
+        } catch TrinsicWalletError.documentRequestUnavailable { }
         catch { XCTFail("Unexpected error: \(error)") }
         XCTAssertEqual(checks, 2)
         XCTAssertNil(spy.request)
@@ -465,9 +465,9 @@ final class NativeWalletDescriptorTests: XCTestCase {
 
     func testCancellationDuringPreflightDoesNotBecomeAnAvailabilityFailure() async throws {
         let spy = NativeWalletControllerSpy()
-        let client = TrinsicMdl(controller: spy)
+        let client = TrinsicWallet(controller: spy)
         let request = try walletChallenge()
-        let task = Task { try await client.performMdlExchange(request) }
+        let task = Task { try await client.performExchange(request) }
         spy.availability = { _ in task.cancel(); return false }
         do {
             _ = try await task.value
@@ -487,9 +487,9 @@ final class NativeWalletDescriptorTests: XCTestCase {
                        message, file: file, line: line)
     }
 
-    private func assertWalletCancellation(_ client: TrinsicMdl, _ request: String) async {
-        do { _ = try await client.performMdlExchange(request); XCTFail("Spy cancels rather than accessing a real ID") }
-        catch TrinsicMdlError.documentRequestFailed(let underlying) {
+    private func assertWalletCancellation(_ client: TrinsicWallet, _ request: String) async {
+        do { _ = try await client.performExchange(request); XCTFail("Spy cancels rather than accessing a real ID") }
+        catch TrinsicWalletError.documentRequestFailed(let underlying) {
             XCTAssertEqual((underlying as NSError).domain, PKIdentityErrorDomain)
             XCTAssertEqual((underlying as NSError).code, PKIdentityError.Code.cancelled.rawValue)
         } catch { XCTFail("Unexpected error: \(error)") }

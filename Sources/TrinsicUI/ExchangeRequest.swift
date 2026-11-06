@@ -1,7 +1,7 @@
 import Foundation
 
 /// The result of a native Wallet exchange. Submit `token` to Trinsic unchanged.
-public struct MdlExchangeResult {
+public struct WalletExchangeResult {
     public let exchangeId: String
     public let token: String
 
@@ -10,6 +10,9 @@ public struct MdlExchangeResult {
         self.token = encryptedData.base64EncodedString()
     }
 }
+
+@available(*, deprecated, renamed: "WalletExchangeResult")
+public typealias MdlExchangeResult = WalletExchangeResult
 
 public struct ExchangeRequest: Codable {
     public var exchangeId: String

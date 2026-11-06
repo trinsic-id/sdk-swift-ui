@@ -16,7 +16,11 @@ final class NativeWalletRequestTests: XCTestCase {
 
     func testBase64RejectsInvalidCharactersPaddingAndNoncanonicalBits() {
         for invalid in ["", "=", "A", "AA=", "AA===", "AA=A", "AA==\n", " A A==", "💳", "Zg!", "Zh==", "Zm9="] {
-            XCTAssertThrowsError(try NativeWalletBase64.decode(invalid), invalid)
+            XCTAssertThrowsError(try NativeWalletBase64.decode(invalid), invalid) { error in
+                guard case TrinsicWalletError.invalidRequest = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+            }
         }
     }
 
@@ -134,7 +138,7 @@ final class NativeWalletRequestTests: XCTestCase {
         // .DecodesSdkAndLegacyResponseWithoutChangingEncryptedBytes, which exercises
         // AppleWalletIntegration.DecodeNativeResponse (PR #5144).
         let encrypted = Data([0xa1, 0x64, 0x64, 0x61, 0x74, 0x61, 0x44, 0xff, 0xbf, 0xff, 0xfa])
-        let result = MdlExchangeResult(exchangeId: "test-exchange", encryptedData: encrypted)
+        let result = WalletExchangeResult(exchangeId: "test-exchange", encryptedData: encrypted)
         XCTAssertEqual(result.exchangeId, "test-exchange")
         XCTAssertEqual(result.token, "oWRkYXRhRP+///o=")
         XCTAssertEqual(Data(base64Encoded: result.token), encrypted)

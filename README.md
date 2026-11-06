@@ -24,15 +24,40 @@ You _must_ specify a `redirectUrl` when creating either kind of Session, and tha
 
 For [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-session), the browser API handles `LaunchBrowser` with `CaptureRedirect`.
 
-For native Apple Wallet, build with Xcode 26+. `TrinsicMdl` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` and `performMdlExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
+For native Apple Wallet, build with Xcode 26+. `TrinsicWallet` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` and `performExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
 
-A false availability result must stop presentation: Apple may terminate the app for an unentitled request. `performMdlExchange` also checks availability internally and throws `TrinsicMdlError.documentRequestUnavailable` if no candidate passes, including when called without a prior availability check. This applies to every document type and does not imply a hardware limitation: missing entitlements or an unavailable credential can also cause rejection. A true result does not validate merchant configuration or guarantee verification success.
+The Wallet APIs are part of the main `TrinsicUI` module: use `import TrinsicUI`. Their sources now live directly in `Sources/TrinsicUI`, outside the former `Alpha` folder; no separate alpha module or import is needed.
 
-The legacy `deviceDoesNotSupportMdl` case remains deprecated for existing references; this path no longer throws it. Update exhaustive switches over `TrinsicMdlError` to handle `documentRequestUnavailable` when upgrading.
+```swift
+let wallet = TrinsicWallet()
+if try await wallet.canRequestDocument(challenge) {
+    let result: WalletExchangeResult = try await wallet.performExchange(challenge)
+    // Send result.exchangeId and result.token unchanged to your backend.
+}
+```
+
+A false availability result must stop presentation: Apple may terminate the app for an unentitled request. `performExchange` also checks availability internally and throws `TrinsicWalletError.documentRequestUnavailable` if no candidate passes, including when called without a prior availability check. This applies to every document type and does not imply a hardware limitation: missing entitlements or an unavailable credential can also cause rejection. A true result does not validate merchant configuration or guarantee verification success.
+
+For multiple alternatives on iOS 26+, the SDK checks a combined `PKIdentityAnyOfDescriptor` first, preserving Wallet's document choice when it succeeds. If Apple rejects the combined descriptor, it checks each complete alternative in backend order and selects the first one Apple approves. For example, an app permitted to request a driver's license may still satisfy a Photo ID-or-license challenge even when it lacks Photo ID permission. On older iOS versions, supported alternatives are checked individually. Both public APIs share this selection logic; `performExchange` always checks again. The SDK preserves every field and storage intent in the selected alternative, along with the merchant and nonce, and never presents a denied descriptor.
+
+When upgrading, replace `TrinsicMdl` with `TrinsicWallet`, `TrinsicMdlError` with `TrinsicWalletError`, `MdlExchangeResult` with `WalletExchangeResult`, and `performMdlExchange` with `performExchange`. These old names remain as deprecated aliases. Replace `canRequestDriversLicense` with `canRequestDocument` when checking a challenge; `userHasDriversLicense` remains a driver's-license/state-ID-only probe.
+
+The legacy `deviceDoesNotSupportMdl` case remains deprecated for existing references; this path no longer throws it. Update exhaustive switches over `TrinsicWalletError` to handle `documentRequestUnavailable` when upgrading.
 
 Native challenges must contain a `v1` property with a complete exchange request. The SDK ignores other versions and unversioned sibling fields. A challenge without `v1`, including a legacy unversioned challenge, throws `ExchangeRequestTransformerError.unsupportedChallengeVersion`. A malformed `v1` fails validation.
 
-The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Other extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet. Use `diagnosticHandler` for warnings and errors.
+The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Other extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet.
+
+Use `diagnosticHandler` for structured events on the main actor:
+
+| Code | Level | Details |
+| --- | --- | --- |
+| `requestParsed` | `info` | `request`: version, exchange/merchant/team IDs, nonce byte count, and document alternatives with regions, attributes, storage intents and age thresholds. Emitted after parsing, before descriptor validation. |
+| `availabilityChecked` | `info` | `documentType` (`AnyOf` for a composite) and `isAvailable`: Apple's result for that exact descriptor. A false result does not identify its underlying cause. |
+| `documentSelected` | `info` | `documentType`: the descriptor selected for presentation by `performExchange`. This is not evidence that consent or verification succeeded. |
+| `selectingSingleDocument` | `warning` | Individual alternative checks are starting, either on an older OS or after composite rejection. |
+
+Existing unsupported-document/attribute warnings and `noSupportedDocuments` errors remain available. When upgrading, handle the new `info` level and event codes in exhaustive switches. Request summaries are delivered only to the explicit callback; the SDK never logs raw challenge JSON, nonce values, credentials, response tokens or unknown JSON properties. Keep application/session context and signing-profile diagnostics in your app.
 
 Your application/backend owns Session creation, challenge refresh, response submission, and result collection.
 
