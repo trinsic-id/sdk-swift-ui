@@ -9,7 +9,7 @@ final class NativeWalletContractTests: XCTestCase {
             let request = try NativeWalletRequestParser.parse(walletVersionedChallenge(fixture.challenge))
             let expected = fixture.expected
             XCTAssertEqual(request.exchangeId, expected.exchangeId, fixture.name)
-            XCTAssertEqual(request.type, "mdlRequest", fixture.name)
+            XCTAssertEqual(request.type, "credentialRequest", fixture.name)
             XCTAssertEqual(request.platform, "apple-wallet", fixture.name)
             XCTAssertEqual(request.exchangeMechanism, "NativeApp", fixture.name)
             XCTAssertEqual(request.requestObject.merchantId, expected.merchantId, fixture.name)

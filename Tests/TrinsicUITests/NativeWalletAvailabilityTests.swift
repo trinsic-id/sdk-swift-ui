@@ -11,7 +11,7 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         spy.availability = { $0 is PKIdentityDriversLicenseDescriptor }
         spy.asynchronousChecks = true
         var diagnostics: [NativeWalletDiagnostic] = []
-        let client = TrinsicWallet(controller: spy) {
+        let client = TrinsicCredentials(controller: spy) {
             XCTAssertTrue(Thread.isMainThread, "SDK callbacks stay on its main actor")
             diagnostics.append($0)
         }
@@ -46,7 +46,7 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Composite descriptors require iOS 26") }
         let spy = AlternativeControllerSpy()
         var diagnostics: [NativeWalletDiagnostic] = []
-        let client = TrinsicWallet(controller: spy) { diagnostics.append($0) }
+        let client = TrinsicCredentials(controller: spy) { diagnostics.append($0) }
         let challenge = try alternatives()
         let available = try await client.canRequestDocument(challenge)
         XCTAssertTrue(available)
@@ -63,7 +63,7 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Composite descriptors require iOS 26") }
         let spy = AlternativeControllerSpy()
         spy.availability = { !($0 is PKIdentityAnyOfDescriptor) }
-        await expectWalletCancellation(TrinsicWallet(controller: spy), try alternatives())
+        await expectWalletCancellation(TrinsicCredentials(controller: spy), try alternatives())
         XCTAssertEqual(spy.checked.count, 2)
         XCTAssertTrue(spy.request?.descriptor is PKIdentityPhotoIDDescriptor)
         XCTAssertTrue(spy.request?.descriptor === spy.checked[1])
@@ -74,14 +74,14 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         let spy = AlternativeControllerSpy()
         spy.availability = { _ in false }
         var diagnostics: [NativeWalletDiagnostic] = []
-        let client = TrinsicWallet(controller: spy) { diagnostics.append($0) }
+        let client = TrinsicCredentials(controller: spy) { diagnostics.append($0) }
         let challenge = try alternatives()
         let available = try await client.canRequestDocument(challenge)
         XCTAssertFalse(available)
         do {
-            _ = try await client.performExchange(challenge)
+            _ = try await client.performCredentialExchange(challenge)
             XCTFail("No alternative was approved")
-        } catch TrinsicWalletError.documentRequestUnavailable { }
+        } catch CredentialExchangeError.documentRequestUnavailable { }
         catch { XCTFail("Unexpected error: \(error)") }
         XCTAssertEqual(spy.checked.count, 6)
         XCTAssertNil(spy.request)
@@ -92,15 +92,15 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Composite descriptors require iOS 26") }
         let spy = AlternativeControllerSpy()
         spy.availability = { $0 is PKIdentityDriversLicenseDescriptor }
-        let client = TrinsicWallet(controller: spy)
+        let client = TrinsicCredentials(controller: spy)
         let challenge = try alternatives()
         let available = try await client.canRequestDocument(challenge)
         XCTAssertTrue(available)
         spy.availability = { _ in false }
         do {
-            _ = try await client.performExchange(challenge)
+            _ = try await client.performCredentialExchange(challenge)
             XCTFail("An earlier probe must not authorize a newly denied request")
-        } catch TrinsicWalletError.documentRequestUnavailable { }
+        } catch CredentialExchangeError.documentRequestUnavailable { }
         catch { XCTFail("Unexpected error: \(error)") }
         XCTAssertEqual(spy.checked.count, 6)
         XCTAssertNil(spy.request)
@@ -111,11 +111,11 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         for probeOnly in [true, false] {
             for cancelAt in 1...3 {
                 let spy = AlternativeControllerSpy()
-                let client = TrinsicWallet(controller: spy)
+                let client = TrinsicCredentials(controller: spy)
                 let challenge = try alternatives()
                 let task = Task {
                     if probeOnly { _ = try await client.canRequestDocument(challenge) }
-                    else { _ = try await client.performExchange(challenge) }
+                    else { _ = try await client.performCredentialExchange(challenge) }
                 }
                 spy.availability = { descriptor in
                     if spy.checked.count == cancelAt { task.cancel() }
@@ -134,11 +134,11 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         for event: NativeWalletDiagnostic.Code in [.availabilityChecked, .documentSelected] {
             let spy = AlternativeControllerSpy()
             var cancel: () -> Void = {}
-            let client = TrinsicWallet(controller: spy) {
+            let client = TrinsicCredentials(controller: spy) {
                 if $0.code == event { cancel() }
             }
             let challenge = try walletChallenge()
-            let task = Task { try await client.performExchange(challenge) }
+            let task = Task { try await client.performCredentialExchange(challenge) }
             cancel = { task.cancel() }
             do { _ = try await task.value; XCTFail("Expected cancellation from \(event)") }
             catch is CancellationError { }
@@ -155,10 +155,10 @@ final class NativeWalletAvailabilityTests: XCTestCase {
         ])])
     }
 
-    private func expectWalletCancellation(_ client: TrinsicWallet, _ challenge: String,
+    private func expectWalletCancellation(_ client: TrinsicCredentials, _ challenge: String,
                                           file: StaticString = #filePath, line: UInt = #line) async {
-        do { _ = try await client.performExchange(challenge); XCTFail("Spy cancels without accessing an ID", file: file, line: line) }
-        catch TrinsicWalletError.documentRequestFailed(let error) {
+        do { _ = try await client.performCredentialExchange(challenge); XCTFail("Spy cancels without accessing an ID", file: file, line: line) }
+        catch CredentialExchangeError.documentRequestFailed(let error) {
             XCTAssertEqual((error as NSError).domain, PKIdentityErrorDomain, file: file, line: line)
             XCTAssertEqual((error as NSError).code, PKIdentityError.Code.cancelled.rawValue, file: file, line: line)
         } catch { XCTFail("Unexpected error: \(error)", file: file, line: line) }

@@ -12,6 +12,9 @@ in the required `v1` envelope; `NativeWalletDescriptorTests` does the same and c
 the resulting PassKit request on iOS 26+.
 JSON escaping and property order are intentionally not part of the contract.
 
+The stored exchange requests use `type: "credentialRequest"`. Coordinate these
+fixture changes with Connect's matching copy and backend serializer.
+
 Cases cover standalone mDL, standalone PhotoID, and ordered PhotoID/mDL
 alternatives, including binary nonce preservation, retention intent, and an age
 threshold. All identifiers are synthetic. Japan's national ID is covered by the
@@ -30,7 +33,11 @@ scenarios with Google Wallet payloads under `library/src/test/resources`.
 the complete `v1` request, ignores unknown version payloads, and rejects missing or
 malformed `v1` requests. The shared fixture's legacy scenarios are asserted to fail
 with `unsupportedChallengeVersion`; its hypothetical v2/v10 SDK scenarios are
-checked against this SDK's v1-only support. The shared fixture files remain
-unchanged for use by the other SDKs.
+checked against this SDK's v1-only support.
+
+Versioned request bodies use `type: "credentialRequest"`, including hypothetical
+future versions that reuse the v1 schema for selection tests. Unversioned legacy
+fields retain `mdlRequest`; only the selected version's type is validated, and
+`mdlRequest` is rejected in `v1`. Inner request strings are preserved unchanged.
 
 Run `swift test --filter NativeChallenge` and `scripts/test-ios.sh`.

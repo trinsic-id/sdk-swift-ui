@@ -93,13 +93,13 @@ internal enum NativeWalletBase64 {
         guard !payload.isEmpty, padding.count <= 2, padding.allSatisfy({ $0 == "=" }),
               payload.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0)
                   || (48...57).contains($0) || [43, 47, 45, 95].contains($0) }),
-              payload.count % 4 != 1 else { throw TrinsicWalletError.invalidRequest }
+              payload.count % 4 != 1 else { throw CredentialExchangeError.invalidRequest }
         let normalized = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         let requiredPadding = (4 - normalized.count % 4) % 4
         guard padding.isEmpty || (padding.count == requiredPadding && value.count % 4 == 0),
               let data = Data(base64Encoded: normalized + String(repeating: "=", count: requiredPadding)),
               data.base64EncodedString() == normalized + String(repeating: "=", count: requiredPadding) else {
-            throw TrinsicWalletError.invalidRequest
+            throw CredentialExchangeError.invalidRequest
         }
         return data
     }
@@ -109,7 +109,7 @@ internal enum NativeWalletRequestParser {
     static func parse(_ encoded: String) throws -> ParsedExchangeRequest {
         let outer = try JSONDecoder().decode(NativeWalletChallenge.self,
             from: NativeWalletBase64.decode(encoded)).request
-        guard outer.type == "mdlRequest" else {
+        guard outer.type == "credentialRequest" else {
             throw ExchangeRequestTransformerError.unsupportedExchangeType(outer.type)
         }
         guard outer.platform == "apple-wallet" else {

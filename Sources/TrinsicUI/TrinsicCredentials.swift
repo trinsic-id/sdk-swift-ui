@@ -5,7 +5,7 @@ import PassKit
 @available(macOS, unavailable, message: "Not supported on macOS.")
 @available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
 @MainActor
-public class TrinsicWallet {
+public class TrinsicCredentials {
     private let controller: PKIdentityAuthorizationController
     private let diagnosticHandler: ((NativeWalletDiagnostic) -> Void)?
     internal var capabilities = NativeWalletCapabilities.current
@@ -25,14 +25,14 @@ public class TrinsicWallet {
 
     /// Accepts the challenge exactly as supplied by the backend, including document alternatives.
     /// Throws `documentRequestUnavailable` without presenting Wallet if preflight rejects every candidate.
-    public func performExchange(_ requestObjectBase64Url: String) async throws -> WalletExchangeResult {
+    public func performCredentialExchange(_ requestObjectBase64Url: String) async throws -> CredentialExchangeResult {
         try Task.checkCancellation()
         let exchange = try NativeWalletRequestParser.parse(requestObjectBase64Url)
         let descriptors = try supportedDescriptors(exchange)
         // Recheck even if the caller already used canRequestDocument: availability
         // may have changed, and no denied descriptor may reach presentation.
         guard let descriptor = try await availableDescriptor(descriptors) else {
-            throw TrinsicWalletError.documentRequestUnavailable
+            throw CredentialExchangeError.documentRequestUnavailable
         }
         try Task.checkCancellation()
         NativeWalletDiagnostics.emit(.documentSelected, documentType: documentType(descriptor), to: diagnosticHandler)
@@ -44,19 +44,13 @@ public class TrinsicWallet {
         do {
             let document = try await controller.requestDocument(request)
             try Task.checkCancellation()
-            return WalletExchangeResult(exchangeId: exchange.exchangeId, encryptedData: document.encryptedData)
+            return CredentialExchangeResult(exchangeId: exchange.exchangeId, encryptedData: document.encryptedData)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             // Preserve PassKit's error (including cancellation) for callers to inspect.
-            throw TrinsicWalletError.documentRequestFailed(error)
+            throw CredentialExchangeError.documentRequestFailed(error)
         }
-    }
-
-    /// Compatibility alias for exchanging any supported Wallet document type.
-    @available(*, deprecated, renamed: "performExchange(_:)")
-    public func performMdlExchange(_ requestObjectBase64Url: String) async throws -> WalletExchangeResult {
-        try await performExchange(requestObjectBase64Url)
     }
 
     /// Checks whether Wallet can fulfill any supported document alternative in the challenge.
@@ -65,12 +59,6 @@ public class TrinsicWallet {
         let exchange = try NativeWalletRequestParser.parse(requestObjectBase64Url)
         let descriptors = try supportedDescriptors(exchange)
         return try await availableDescriptor(descriptors) != nil
-    }
-
-    /// Compatibility alias. This now checks every supported document type in the challenge.
-    @available(*, deprecated, renamed: "canRequestDocument(_:)")
-    public func canRequestDriversLicense(_ requestObjectBase64Url: String) async throws -> Bool {
-        try await canRequestDocument(requestObjectBase64Url)
     }
 
     /// Generic driver's-license/state-ID probe, independent of a specific challenge.
@@ -128,17 +116,8 @@ public class TrinsicWallet {
     }
 }
 
-@available(iOS 17.0, *)
-@available(macOS, unavailable, message: "Not supported on macOS.")
-@available(macCatalyst, unavailable, message: "Not supported on Mac Catalyst.")
-@available(*, deprecated, renamed: "TrinsicWallet")
-public typealias TrinsicMdl = TrinsicWallet
-
-public enum TrinsicWalletError: Error {
+public enum CredentialExchangeError: Error {
     case notSupported
-    /// Legacy case retained for existing clients; no longer emitted for preflight rejection.
-    @available(*, deprecated, renamed: "documentRequestUnavailable")
-    case deviceDoesNotSupportMdl
     case unsupportedType
     case invalidRequest
     case documentRequestFailed(Error)
@@ -147,6 +126,3 @@ public enum TrinsicWalletError: Error {
     /// missing entitlements, an unsupported device, or no eligible ID; preflight doesn't distinguish them.
     case documentRequestUnavailable
 }
-
-@available(*, deprecated, renamed: "TrinsicWalletError")
-public typealias TrinsicMdlError = TrinsicWalletError
