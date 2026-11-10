@@ -22,29 +22,27 @@ You _must_ specify a `redirectUrl` when creating either kind of Session, and tha
 
 ### Direct Provider Sessions
 
-For [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-session), the browser API handles `LaunchBrowser` with `CaptureRedirect`.
+For [Direct Provider Sessions](https://docs.trinsic.id/docs/direct-provider-session), the browser API handles `nextStep.method: LaunchBrowser` with `resultCollection.method: CaptureRedirect`. For `PerformNativeChallenge` steps with `SubmitNativeChallengeResponse` result collection, use the native credential API below.
 
-For native Apple Wallet, build with Xcode 26+. `TrinsicWallet` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Pass the backend challenge unchanged to `canRequestDocument` and `performExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
+For native Apple Wallet, build with Xcode 26+. `TrinsicCredentials` supports driver's licenses/state IDs on iOS 17+, national IDs on iOS 18+, and Photo ID on iOS 26+, subject to Wallet availability and app entitlements. Create a Direct Provider Session on your backend with the `NativeChallenge` capability. When `nextStep.method` is `PerformNativeChallenge`, pass its base64url `nextStep.content` unchanged to `canRequestDocument` and `performCredentialExchange`; submit the returned `exchangeId` and `token` unchanged to your backend.
 
-The Wallet APIs are part of the main `TrinsicUI` module: use `import TrinsicUI`. Their sources now live directly in `Sources/TrinsicUI`, outside the former `Alpha` folder; no separate alpha module or import is needed.
+The native credential APIs are part of the `TrinsicUI` module: use `import TrinsicUI`.
 
 ```swift
-let wallet = TrinsicWallet()
-if try await wallet.canRequestDocument(challenge) {
-    let result: WalletExchangeResult = try await wallet.performExchange(challenge)
+let credentials = TrinsicCredentials()
+if try await credentials.canRequestDocument(challenge) {
+    let result: CredentialExchangeResult = try await credentials.performCredentialExchange(challenge)
     // Send result.exchangeId and result.token unchanged to your backend.
 }
 ```
 
-A false availability result must stop presentation: Apple may terminate the app for an unentitled request. `performExchange` also checks availability internally and throws `TrinsicWalletError.documentRequestUnavailable` if no candidate passes, including when called without a prior availability check. This applies to every document type and does not imply a hardware limitation: missing entitlements or an unavailable credential can also cause rejection. A true result does not validate merchant configuration or guarantee verification success.
+A false availability result must stop presentation: Apple may terminate the app for an unentitled request. `performCredentialExchange` also checks availability internally and throws `CredentialExchangeError.documentRequestUnavailable` if no candidate passes, including when called without a prior availability check. This applies to every document type and does not imply a hardware limitation: missing entitlements or an unavailable credential can also cause rejection. A true result does not validate merchant configuration or guarantee verification success.
 
-For multiple alternatives on iOS 26+, the SDK checks a combined `PKIdentityAnyOfDescriptor` first, preserving Wallet's document choice when it succeeds. If Apple rejects the combined descriptor, it checks each complete alternative in backend order and selects the first one Apple approves. For example, an app permitted to request a driver's license may still satisfy a Photo ID-or-license challenge even when it lacks Photo ID permission. On older iOS versions, supported alternatives are checked individually. Both public APIs share this selection logic; `performExchange` always checks again. The SDK preserves every field and storage intent in the selected alternative, along with the merchant and nonce, and never presents a denied descriptor.
+For multiple alternatives on iOS 26+, the SDK checks a combined `PKIdentityAnyOfDescriptor` first, preserving Wallet's document choice when it succeeds. If Apple rejects the combined descriptor, it checks each complete alternative in backend order and selects the first one Apple approves. For example, an app permitted to request a driver's license may still satisfy a Photo ID-or-license challenge even when it lacks Photo ID permission. On older iOS versions, supported alternatives are checked individually. Both public APIs share this selection logic; `performCredentialExchange` always checks again. The SDK preserves every field and storage intent in the selected alternative, along with the merchant and nonce, and never presents a denied descriptor.
 
-When upgrading, replace `TrinsicMdl` with `TrinsicWallet`, `TrinsicMdlError` with `TrinsicWalletError`, `MdlExchangeResult` with `WalletExchangeResult`, and `performMdlExchange` with `performExchange`. These old names remain as deprecated aliases. Replace `canRequestDriversLicense` with `canRequestDocument` when checking a challenge; `userHasDriversLicense` remains a driver's-license/state-ID-only probe.
+`userHasDriversLicense` is a driver's-license/state-ID-only availability probe, independent of a challenge.
 
-The legacy `deviceDoesNotSupportMdl` case remains deprecated for existing references; this path no longer throws it. Update exhaustive switches over `TrinsicWalletError` to handle `documentRequestUnavailable` when upgrading.
-
-Native challenges must contain a `v1` property with a complete exchange request. The SDK ignores other versions and unversioned sibling fields. A challenge without `v1`, including a legacy unversioned challenge, throws `ExchangeRequestTransformerError.unsupportedChallengeVersion`. A malformed `v1` fails validation.
+Native challenges must contain a `v1` property with a complete exchange request whose routing values are `type: "credentialRequest"`, `platform: "apple-wallet"`, and `exchangeMechanism: "NativeApp"`. The SDK ignores other versions and unversioned sibling fields. A challenge without `v1` throws `ExchangeRequestTransformerError.unsupportedChallengeVersion`. A malformed `v1` fails validation without falling back to another version or unversioned fields. Other type values are rejected with `unsupportedExchangeType`.
 
 The backend may send a single document or `documentRequests` alternatives, of which any one may satisfy the request. Other extra JSON properties are ignored. Unknown or OS-unavailable document types, and whole alternatives with unsupported attributes, are skipped with diagnostics; malformed known fields still fail. If no complete supported alternative remains, the exchange fails before opening Wallet.
 
@@ -54,10 +52,10 @@ Use `diagnosticHandler` for structured events on the main actor:
 | --- | --- | --- |
 | `requestParsed` | `info` | `request`: version, exchange/merchant/team IDs, nonce byte count, and document alternatives with regions, attributes, storage intents and age thresholds. Emitted after parsing, before descriptor validation. |
 | `availabilityChecked` | `info` | `documentType` (`AnyOf` for a composite) and `isAvailable`: Apple's result for that exact descriptor. A false result does not identify its underlying cause. |
-| `documentSelected` | `info` | `documentType`: the descriptor selected for presentation by `performExchange`. This is not evidence that consent or verification succeeded. |
+| `documentSelected` | `info` | `documentType`: the descriptor selected for presentation by `performCredentialExchange`. This is not evidence that consent or verification succeeded. |
 | `selectingSingleDocument` | `warning` | Individual alternative checks are starting, either on an older OS or after composite rejection. |
 
-Existing unsupported-document/attribute warnings and `noSupportedDocuments` errors remain available. When upgrading, handle the new `info` level and event codes in exhaustive switches. Request summaries are delivered only to the explicit callback; the SDK never logs raw challenge JSON, nonce values, credentials, response tokens or unknown JSON properties. Keep application/session context and signing-profile diagnostics in your app.
+Diagnostics also include unsupported-document/attribute warnings and `noSupportedDocuments` errors. Request summaries are delivered only to the explicit callback; the SDK never logs raw challenge JSON, nonce values, credentials, response tokens or unknown JSON properties. Keep application/session context and signing-profile diagnostics in your app.
 
 Your application/backend owns Session creation, challenge refresh, response submission, and result collection.
 
@@ -73,7 +71,7 @@ Add the Trinsic repository `https://github.com/trinsic-id/sdk-swift-ui` as a dep
 
 This library makes use of `ASWebAuthenticationSession` on iOS and macOS.
 
-For a custom-scheme callback, register the scheme against your app on both iOS and macOS. The existing `callbackUrlScheme` API remains supported. Pass only the scheme to that API, never `https` or a complete URL.
+For a custom-scheme callback, register the scheme against your app on both iOS and macOS. Pass only the scheme to `callbackUrlScheme`, never `https` or a complete URL.
 
 This custom scheme **should be globally unique to your organization and application**.
 
@@ -114,7 +112,7 @@ if let redirectToken = result.redirectToken {
 - `callbackUrl: String?`: the full URL returned by the native authentication session, including its query and fragment. This is `nil` on local cancellation.
 - `canceled: Bool`: `true` on local cancellation or when the returned URL contains `canceled=true`.
 
-`success` and `resultsAccessKey` are no longer result properties. Use your backend's Trinsic API response for Session status and its stored results access key.
+Use your backend's Trinsic API response for Session status and its stored results access key.
 
 ## HTTPS callbacks (iOS 17.4+ / macOS 14.4+)
 
@@ -154,7 +152,7 @@ Apple's authentication-session HTTPS callback requires the **webcredentials** se
 
 If the domain also opens your app from links outside an active SDK session, keep `applinks:example.com` in your entitlements and the corresponding `applinks` section in the same association file. Handle those incoming links in your app as usual; the SDK captures verification callbacks through its authentication session and does not require an `onOpenURL` forwarding hook.
 
-HTTPS callbacks fail with `unsupportedHttpsLinking` on iOS versions before 17.4. For those devices, create the Session with a registered custom-scheme `redirectUrl` and use either the existing scheme-only API or `callbackUrl: "your-scheme://callback"`. There is no automatic downgrade, because the backend must use the same redirect address. `cancel()` applies to both overloads.
+HTTPS callbacks fail with `unsupportedHttpsLinking` on iOS versions before 17.4. For those devices, create the Session with a registered custom-scheme `redirectUrl` and use either the scheme-only API or `callbackUrl: "your-scheme://callback"`. There is no automatic downgrade, because the backend must use the same redirect address. `cancel()` applies to both overloads.
 
 Keep a dedicated callback path, such as `/session-complete`, separate from links that launch a new verification, such as `/start-verification`.
 

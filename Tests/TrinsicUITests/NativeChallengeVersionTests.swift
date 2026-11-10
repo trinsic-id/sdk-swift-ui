@@ -11,6 +11,7 @@ final class NativeChallengeVersionTests: XCTestCase {
             do {
                 let request = try NativeWalletRequestParser.parse(fixture.challenge)
                 XCTAssertEqual(request.exchangeId, "dd9b5ed1-447b-4e31-b4a6-b7ea8527ee93", fixture.name)
+                XCTAssertEqual(request.type, "credentialRequest", fixture.name)
                 XCTAssertEqual(request.requestObject.nonce, "AH+A/v8=", fixture.name)
             } catch ExchangeRequestTransformerError.unsupportedChallengeVersion {
                 actualError = "unsupported_challenge_version"
@@ -39,9 +40,10 @@ final class NativeChallengeVersionTests: XCTestCase {
         let v1 = try walletChallenge(documents: [walletDocument("PhotoID")],
             bodyChanges: ["nonce": "AQID", "merchantId": "merchant.v1", "teamId": "TEAMV1"],
             envelopeChanges: ["exchangeId": "v1-exchange"], versioned: false)
-        let legacy = try envelope(walletChallenge(versioned: false))
+        let legacy = try envelope(walletChallenge(envelopeChanges: ["type": "mdlRequest"], versioned: false))
         let request = try NativeWalletRequestParser.parse(walletVersionedChallenge(v1, siblings: legacy))
         XCTAssertEqual(request.exchangeId, "v1-exchange")
+        XCTAssertEqual(request.type, "credentialRequest")
         XCTAssertEqual(request.requestObject.nonce, "AQID")
         XCTAssertEqual(request.requestObject.merchantId, "merchant.v1")
         XCTAssertEqual(request.requestObject.teamId, "TEAMV1")
@@ -50,6 +52,34 @@ final class NativeChallengeVersionTests: XCTestCase {
         let malformedLegacy = legacy.mapValues { _ in NSNull() }
         XCTAssertEqual(try NativeWalletRequestParser.parse(
             walletVersionedChallenge(v1, siblings: malformedLegacy)).exchangeId, "v1-exchange")
+    }
+
+    func testSelectedVersionRejectsOtherTypesWithoutFallback() throws {
+        let valid = try envelope(walletChallenge(versioned: false))
+        var siblings = valid
+        siblings["v2"] = valid
+        for type in ["mdlRequest", "walletRequest", "other", "", "CredentialRequest", " credentialRequest "] {
+            let selected = try walletChallenge(envelopeChanges: ["type": type], versioned: false)
+            for fallbackFields in [[:], siblings] {
+                let encoded = try walletVersionedChallenge(selected, siblings: fallbackFields)
+                XCTAssertThrowsError(try NativeWalletRequestParser.parse(encoded), type) { error in
+                    guard case ExchangeRequestTransformerError.unsupportedExchangeType(let rejected) = error else {
+                        return XCTFail("Unexpected error: \(error)")
+                    }
+                    XCTAssertEqual(rejected, type)
+                }
+            }
+        }
+    }
+
+    func testUnselectedVersionTypeDoesNotAffectCredentialRequest() throws {
+        let selected = try walletChallenge(versioned: false)
+        for type in ["mdlRequest", "other"] {
+            let future = try envelope(walletChallenge(envelopeChanges: ["type": type], versioned: false))
+            let request = try NativeWalletRequestParser.parse(walletVersionedChallenge(selected, siblings: ["v2": future]))
+            XCTAssertEqual(request.type, "credentialRequest")
+            XCTAssertEqual(request.exchangeId, "test-exchange")
+        }
     }
 
     func testMalformedSelectedVersionNeverFallsBackToLegacy() throws {

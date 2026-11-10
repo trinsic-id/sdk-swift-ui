@@ -54,9 +54,9 @@ public class ExchangeRequestTransformer {
 
     internal static func descriptors(from request: ParsedExchangeRequest, capabilities: NativeWalletCapabilities,
         diagnosticHandler: ((NativeWalletDiagnostic) -> Void)?) throws -> [any PKIdentityDocumentDescriptor] {
-        guard request.type == "mdlRequest", request.exchangeMechanism == "NativeApp" else {
+        guard request.type == "credentialRequest", request.exchangeMechanism == "NativeApp" else {
             throw ExchangeRequestTransformerError.unsupportedExchangeType(
-                request.type == "mdlRequest" ? request.exchangeMechanism : request.type)
+                request.type == "credentialRequest" ? request.exchangeMechanism : request.type)
         }
         guard request.platform == "apple-wallet" else {
             throw ExchangeRequestTransformerError.unsupportedPlatform(request.platform)
