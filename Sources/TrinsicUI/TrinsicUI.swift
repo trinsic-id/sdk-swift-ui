@@ -114,6 +114,7 @@ import AppKit
                     }
 
                     session.presentationContextProvider = self.presentationContextProvider;
+                    session.prefersEphemeralWebBrowserSession = false
                     if !session.start() {
                         completionHandler?(nil, TrinsicError.error(with: .unknownError, message: "Could not start the web authentication session."))
                     }
