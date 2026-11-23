@@ -105,15 +105,16 @@ final class LaunchSessionTests: XCTestCase {
         XCTAssertEqual(result.callbackUrl, returnedUrl)
     }
 
-    func testOptionalRedirectTokenAndIgnoredLegacyParameters() async throws {
-        let cases: [(query: String, redirectToken: String?)] = [
-            ("", nil),
-            ("&redirectToken=token", "token"),
-            ("&redirectToken", nil),
-            ("&redirectToken=", nil),
-            ("&success=not-a-bool&resultsAccessKey=legacy", nil),
-            ("&redirectToken=one&redirectToken=two", "one"),
-            ("&redirectToken=t%2B%3D#complete", "t+=")
+    func testOptionalRedirectParametersAndIgnoredLegacyParameters() async throws {
+        let cases: [(query: String, redirectToken: String?, redirectReason: String?)] = [
+            ("", nil, nil),
+            ("&redirectToken=token", "token", nil),
+            ("&redirectReason=some%20reason", nil, "some reason"),
+            ("&redirectToken&redirectReason", nil, nil),
+            ("&redirectToken=&redirectReason=", nil, nil),
+            ("&success=not-a-bool&resultsAccessKey=legacy", nil, nil),
+            ("&redirectToken=one&redirectToken=two&redirectReason=first&redirectReason=second", "one", "first"),
+            ("&redirectToken=t%2B%3D#complete", "t+=", nil)
         ]
         for testCase in cases {
             let returnedUrl = callbackUrl + "?sessionId=123" + testCase.query
@@ -124,6 +125,7 @@ final class LaunchSessionTests: XCTestCase {
             let result = try await client.launchSession(launchUrl: launchUrl, callbackUrl: callbackUrl)
             XCTAssertEqual(result.sessionId, "123", testCase.query)
             XCTAssertEqual(result.redirectToken, testCase.redirectToken, testCase.query)
+            XCTAssertEqual(result.redirectReason, testCase.redirectReason, testCase.query)
             XCTAssertEqual(result.callbackUrl, returnedUrl)
             XCTAssertFalse(result.canceled)
             XCTAssertFalse(result.responds(to: NSSelectorFromString("success")))
@@ -192,6 +194,7 @@ final class LaunchSessionTests: XCTestCase {
         XCTAssertTrue(result.canceled)
         XCTAssertNil(result.sessionId)
         XCTAssertNil(result.redirectToken)
+        XCTAssertNil(result.redirectReason)
         XCTAssertNil(result.callbackUrl)
     }
 
@@ -207,6 +210,7 @@ final class LaunchSessionTests: XCTestCase {
         XCTAssertTrue(result.canceled)
         XCTAssertNil(result.sessionId)
         XCTAssertNil(result.redirectToken)
+        XCTAssertNil(result.redirectReason)
         XCTAssertNil(result.callbackUrl)
     }
 
