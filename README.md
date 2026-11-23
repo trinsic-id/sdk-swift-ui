@@ -109,6 +109,7 @@ if let redirectToken = result.redirectToken {
 
 - `sessionId: String?`: the decoded ID from the returned URL, validated against the launch URL's ID. It is `nil` on local cancellation; other results require exactly one matching ID.
 - `redirectToken: String?`: the decoded token from the returned URL. Missing or empty values are `nil`; if the parameter is repeated, the first value is used.
+- `redirectReason: String?` contains the decoded reason from the returned URL. The SDK reads the first occurrence and returns `nil` if the parameter is missing or empty.
 - `callbackUrl: String?`: the full URL returned by the native authentication session, including its query and fragment. This is `nil` on local cancellation.
 - `canceled: Bool`: `true` on local cancellation or when the returned URL contains `canceled=true`.
 

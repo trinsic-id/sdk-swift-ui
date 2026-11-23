@@ -155,6 +155,7 @@ import AppKit
             canceled: Bool(value(for: "canceled") ?? "") ?? false,
             sessionId: sessionId,
             redirectToken: value(for: "redirectToken"),
+            redirectReason: value(for: "redirectReason"),
             callbackUrl: url.absoluteString
         )
     }
